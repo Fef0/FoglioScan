@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutId="scan"
+        android:shortcutShortLabel="@string/scan">
+        <intent
+            android:action="app.foglioscan.action.SCAN"
+            android:targetClass="app.foglioscan.MainActivity"
+            android:targetPackage="app.foglioscan" />
+    </shortcut>
+</shortcuts>

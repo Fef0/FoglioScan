@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="scan">Scansiona</string>
+    <string name="recent">Recenti</string>
+    <string name="empty_title">Scansiona il tuo primo documento</string>
+    <string name="empty_text">Inquadra un foglio o importa una foto. FoglioScan trova la pagina, la raddrizza e la rende come uscita da uno scanner professionale.</string>
+    <string name="open">Apri</string>
+    <string name="share">Condividi</string>
+    <string name="delete">Elimina</string>
+    <string name="more">Altre opzioni</string>
+    <string name="cancel">Annulla</string>
+    <string name="save">Salva</string>
+    <string name="close">Chiudi</string>
+    <string name="apply">Applica</string>
+    <string name="reset">Ripristina</string>
+    <string name="delete_document_title">Eliminare il documento?</string>
+    <string name="delete_document_text">“%1$s” verrà eliminato definitivamente.</string>
+    <plurals name="pages">
+        <item quantity="one">%d pagina</item>
+        <item quantity="other">%d pagine</item>
+    </plurals>
+
+    <string name="flash">Flash</string>
+    <string name="import_image">Importa dalla galleria</string>
+    <string name="review_pages">Rivedi pagine</string>
+    <string name="hint_searching">Cerco un documento…</string>
+    <string name="hint_detected">Documento rilevato</string>
+    <string name="camera_permission_rationale">FoglioScan usa la fotocamera per trovare e scansionare i tuoi documenti. Le foto non lasciano mai il dispositivo.</string>
+    <string name="grant_camera">Consenti fotocamera</string>
+    <string name="open_settings">Apri impostazioni</string>
+    <string name="highlight_color">Colore evidenziazione</string>
+    <string name="highlight_color_desc">Colore usato per contornare il documento mentre lo inquadri.</string>
+    <string name="custom_color">Personalizzato</string>
+
+    <string name="review_title_single">Revisione</string>
+    <string name="page_x_of_y">Pagina %1$d di %2$d</string>
+    <string name="adjust_corners">Regola angoli</string>
+    <string name="rotate">Ruota</string>
+    <string name="delete_page">Elimina pagina</string>
+    <string name="add_page">Aggiungi pagina</string>
+    <string name="save_pdf">Salva PDF</string>
+    <string name="file_name">Nome file</string>
+    <string name="scanned_page">Pagina scansionata</string>
+    <string name="enhancing">Miglioramento…</string>
+    <string name="processing_failed">Impossibile elaborare la pagina</string>
+    <string name="filter_auto">Auto</string>
+    <string name="filter_gray">Scala di grigi</string>
+    <string name="filter_bw">B/N</string>
+    <string name="filter_original">Originale</string>
+    <string name="saved_as">“%1$s” salvato in Documenti/FoglioScan</string>
+    <string name="save_failed">Impossibile salvare il PDF</string>
+    <string name="discard">Scarta</string>
+    <string name="discard_title">Scartare la scansione?</string>
+    <string name="discard_text">Le pagine scansionate andranno perse.</string>
+    <string name="keep_editing">Continua</string>
+
+    <string name="full_image">Intera</string>
+
+    <string name="settings">Impostazioni</string>
+    <string name="back">Indietro</string>
+    <string name="settings_camera">Fotocamera</string>
+    <string name="settings_scanning">Scansione</string>
+    <string name="camera_in_app">Fotocamera FoglioScan</string>
+    <string name="camera_in_app_desc">Evidenzia la pagina in tempo reale mentre la inquadri.</string>
+    <string name="camera_system">App fotocamera del telefono</string>
+    <string name="camera_system_desc">Usa la fotocamera del telefono con il suo HDR e la sua elaborazione. Niente evidenziazione in tempo reale: la pagina viene trovata dopo lo scatto.</string>
+    <string name="phone_hdr">Elaborazione HDR del telefono</string>
+    <string name="phone_hdr_desc">Usa l\'HDR / miglioramento automatico del telefono nella fotocamera FoglioScan, mantenendo l\'evidenziazione.</string>
+    <string name="phone_hdr_unavailable">Non disponibile su questo telefono insieme al rilevamento in tempo reale.</string>
+    <string name="phone_hdr_checking">Verifico cosa supporta il telefono…</string>
+    <string name="phone_hdr_system">Gestito dall\'app fotocamera.</string>
+    <string name="hdr_active">HDR attivo</string>
+    <string name="version_x">Versione %1$s</string>
+
+    <string name="import_file">Importa</string>
+
+    <string name="retry">Riprova</string>
+    <string name="pdf_quality">Qualità PDF</string>
+    <string name="quality_maximum">Massima</string>
+    <string name="quality_maximum_desc">300 dpi · stampa e archiviazione</string>
+    <string name="quality_balanced">Bilanciata</string>
+    <string name="quality_balanced_desc">200 dpi · nitida a schermo e in stampa</string>
+    <string name="quality_small">Ridotta</string>
+    <string name="quality_small_desc">150 dpi · ideale per l\'email</string>
+    <string name="quality_smallest">Minima</string>
+    <string name="quality_smallest_desc">100 dpi · ancora leggibile</string>
+</resources>
