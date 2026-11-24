@@ -52,7 +52,7 @@ class ReorderGestureTest {
                 ReviewScreen(
                     pages = list, snackbar = SnackbarHostState(), defaultCompression = PdfCompression.BALANCED,
                     estimateSizes = { emptyMap() }, onFilter = { _, _ -> }, onRotate = {}, onCrop = {}, onDelete = {},
-                    onRetry = {}, onAddPage = {}, onImport = {}, onSave = { _, _, _ -> }, onClose = {},
+                    onRetry = {}, onAddPage = {}, onImport = {}, onSave = { _, _, _, _ -> }, onClose = {},
                     onMove = { from, to -> list = list.toMutableList().apply { add(to, removeAt(from)) } },
                 )
             }

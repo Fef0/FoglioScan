@@ -57,6 +57,34 @@ class DocumentRepository private constructor(private val context: Context) {
         uri
     }
 
+    /**
+     * Rewrites the PDF at [uri] (a document FoglioScan saved), renaming it to [displayName].
+     * The new file is written to a temporary file first, so a failure never leaves a half-written
+     * document. Throws [SecurityException] if the app no longer owns the file (e.g. after a
+     * reinstall): callers then save a new document instead.
+     */
+    suspend fun replacePdf(uri: Uri, displayName: String, write: (OutputStream) -> Unit): Uri = withContext(Dispatchers.IO) {
+        val temp = java.io.File.createTempFile("replace", ".pdf", context.cacheDir)
+        try {
+            temp.outputStream().buffered().use(write)
+            resolver.openOutputStream(uri, "wt")!!.use { out -> temp.inputStream().use { it.copyTo(out) } }
+            val name = "${sanitize(displayName)}.pdf"
+            runCatching {
+                resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.DISPLAY_NAME, name) }, null, null)
+            }
+        } finally {
+            temp.delete()
+        }
+        thumbnails.evictAll()
+        _version.value++
+        uri
+    }
+
+    /** Copies the document at [uri] to [target] (for reading it back page by page). */
+    suspend fun copyTo(uri: Uri, target: java.io.File) = withContext(Dispatchers.IO) {
+        resolver.openInputStream(uri)!!.use { input -> target.outputStream().use { input.copyTo(it) } }
+    }
+
     suspend fun list(): List<SavedDocument> = withContext(Dispatchers.IO) {
         val projection = arrayOf(
             MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME,

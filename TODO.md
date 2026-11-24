@@ -21,9 +21,8 @@ can be swapped for a learned model without touching the UI.
 - [ ] **Curved-page dewarping — UVDoc** (MIT, SIGGRAPH Asia 2023): predicts a 45×31 sampling grid
       from a 712×488 crop; apply it with bilinear sampling in Kotlin. Use it automatically when the
       grid deviates from a pure homography (page is curved: books, folded sheets).
-      *Status*: not converted yet — exporting it requires loading the third-party PyTorch
-      checkpoint (`model/best_model.pkl`, use `torch.load(..., weights_only=True)`) and then the
-      same ONNX → TFLite path as DocAligner (see README).
+      *Status*: export script ready (`tools/models/export_uvdoc.py`, loads the checkpoint with
+      `weights_only=True`); then the same ONNX → TFLite path as DocAligner (see README).
 - [ ] **Learned restoration — DocRes** (MIT, CVPR 2024): deshadowing / appearance enhancement /
       deblurring in one model. Heavy (transformer); evaluate running at reduced resolution and
       applying its output as a shading map to the full-resolution page. Offer as "Max quality".
@@ -53,7 +52,8 @@ can be swapped for a learned model without touching the UI.
 ## 4. Documents
 
 - [x] Reorder pages by drag & drop in review (long-press a thumbnail; accessibility actions too).
-- [ ] Re-open a saved PDF to append pages.
+- [x] Re-open a saved PDF to append pages (lossless page reuse for FoglioScan PDFs, ≈300 dpi raster for others; replace or save a copy).
+- [ ] "Open with FoglioScan" for PDFs shared from other apps (`openPdf(uri, ownDocument = false)` already handles them).
 - [ ] In-app PDF viewer (`androidx.pdf`) instead of relying on an external app.
 - [ ] Page size setting (Auto / A4 / Letter / Original).
 - [x] 1-bit Flate encoding for B&W pages (compression levels).

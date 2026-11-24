@@ -63,8 +63,10 @@ class PageProcessor(private val locator: DocumentLocator) {
             }.getOrDefault(0)
             val focalPx = if (focal35 in 10..300) PerspectiveWarp.focalPxFrom35mm(focal35.toDouble(), sw, sh) else null
             val (ow, oh) = PerspectiveWarp.outputSize(quadPx, sw, sh, MAX_OUTPUT_LONG_SIDE, focalPx)
-            // A hair inside the edges so no background pixels bleed into the border.
-            Rendered(used, ow, oh, PerspectiveWarp.warp(src, sw, sh, inset(quadPx, EDGE_INSET), ow, oh))
+            // A hair inside the edges so no background pixels bleed into the border (not for a
+            // whole image, e.g. a page taken back from a PDF: it would shrink on every edit).
+            val sampled = if (used == Quad.FULL) quadPx else inset(quadPx, EDGE_INSET)
+            Rendered(used, ow, oh, PerspectiveWarp.warp(src, sw, sh, sampled, ow, oh))
         }
         coroutineContext.ensureActive()
 
@@ -89,6 +91,23 @@ class PageProcessor(private val locator: DocumentLocator) {
             result.recycle()
         }
         Output(out, previewOut, ow, oh, used)
+    }
+
+    /**
+     * A finished page (e.g. taken back from a saved PDF) used as is: the JPEG is copied untouched
+     * (no re-encoding) and only the preview is made.
+     */
+    suspend fun passThrough(source: File, out: File, previewOut: File): Output = withContext(Dispatchers.IO) {
+        source.copyTo(out, overwrite = true)
+        val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(out.path, opts)
+        val preview = decode(out, PREVIEW_LONG_SIDE)
+        try {
+            previewOut.outputStream().buffered().use { preview.compress(Bitmap.CompressFormat.JPEG, PREVIEW_QUALITY, it) }
+        } finally {
+            preview.recycle()
+        }
+        Output(out, previewOut, opts.outWidth, opts.outHeight, Quad.FULL)
     }
 
     private data class Rendered(val quad: Quad, val w: Int, val h: Int, val pixels: IntArray)

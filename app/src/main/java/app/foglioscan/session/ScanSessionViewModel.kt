@@ -16,6 +16,8 @@ import app.foglioscan.ocr.TextRecognizer
 import app.foglioscan.pdf.ExportPage
 import app.foglioscan.pdf.PdfCompression
 import app.foglioscan.pdf.PdfExporter
+import app.foglioscan.pdf.PdfImage
+import app.foglioscan.pdf.PdfPageExtractor
 import app.foglioscan.ui.PageImages
 import app.foglioscan.vision.DocumentLocator
 import app.foglioscan.vision.Quad
@@ -53,7 +55,13 @@ data class PageSpec(
      * The page is never turned automatically after that.
      */
     val oriented: Boolean = false,
+    /** A finished page taken back from a saved PDF: used as is until the user changes it. */
+    val fromPdf: Boolean = false,
 )
+
+/** The saved document being extended, if the session started from one. */
+@Serializable
+data class EditingDocument(val uri: String, val name: String)
 
 /**
  * UI state of one page. Holds only file references: images are decoded on demand by the UI
@@ -98,7 +106,21 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
     private val _pages = MutableStateFlow<List<PageState>>(emptyList())
     val pages: StateFlow<List<PageState>> = _pages.asStateFlow()
 
+    private val _editing = MutableStateFlow<EditingDocument?>(null)
+    /** Set when pages are being added to a saved document (saving can replace it). */
+    val editing: StateFlow<EditingDocument?> = _editing.asStateFlow()
+
+    private var openFailed = false
+
+    /** True once after a document failed to open. */
+    fun consumeOpenError(): Boolean = openFailed.also { openFailed = false }
+
+    private val _opening = MutableStateFlow(false)
+    /** True while a saved PDF's pages are being read. */
+    val opening: StateFlow<Boolean> = _opening.asStateFlow()
+
     init {
+        saved.get<String>(KEY_EDITING)?.let { json -> _editing.value = runCatching { Json.decodeFromString<EditingDocument>(json) }.getOrNull() }
         saved.get<String>(KEY_PAGES)?.let { json ->
             val specs = runCatching { Json.decodeFromString<List<PageSpec>>(json) }.getOrDefault(emptyList())
                 .filter { File(it.sourcePath).exists() }
@@ -133,6 +155,78 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
                     }.isSuccess
                 }
                 if (ok) addSpec(PageSpec(UUID.randomUUID().toString(), file.absolutePath, filter)) else file.delete()
+            }
+        }
+    }
+
+    /**
+     * Starts a session from a saved PDF to add pages to it. FoglioScan's own PDFs give back their
+     * page images byte for byte; other PDFs are rasterized at ≈300 dpi. Replaces the current
+     * session.
+     */
+    fun openPdf(uri: Uri, name: String, ownDocument: Boolean = true) {
+        discard()
+        _editing.value = if (ownDocument) EditingDocument(uri.toString(), name) else null
+        persist()
+        _opening.value = true
+        viewModelScope.launch {
+            try {
+                val copy = File(sessionDir, "open-${UUID.randomUUID()}.pdf")
+                documents.copyTo(uri, copy)
+                val specs = withContext(Dispatchers.IO) {
+                    try { extractPages(copy) } finally { copy.delete() }
+                }
+                for (spec in specs) addSpec(spec)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                Log.e(TAG, "Opening $uri failed", t)
+                openFailed = true
+                _editing.value = null
+                persist()
+            } finally {
+                _opening.value = false
+            }
+        }
+    }
+
+    private fun extractPages(pdf: File): List<PageSpec> {
+        fun spec(file: File, filter: PageFilter) = PageSpec(
+            UUID.randomUUID().toString(), file.absolutePath, filter,
+            quad = Quad.FULL, oriented = true, fromPdf = true,
+        )
+        PdfPageExtractor.open(pdf)?.use { x ->
+            return (0 until x.pageCount).map { i ->
+                when (val img = x.page(i)) {
+                    is PdfImage.Jpeg -> spec(newCaptureFile().apply { writeBytes(img.bytes) }, PageFilter.ORIGINAL)
+                    is PdfImage.Bilevel -> spec(
+                        File(sessionDir, "src-${UUID.randomUUID()}.png").also { f -> PdfExporter.bilevelToPng(img, f) },
+                        PageFilter.BLACK_WHITE,
+                    )
+                }
+            }
+        }
+        // Not a FoglioScan PDF: rasterize every page at ≈300 dpi.
+        return android.os.ParcelFileDescriptor.open(pdf, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+            android.graphics.pdf.PdfRenderer(fd).use { r ->
+                (0 until r.pageCount).map { i ->
+                    r.openPage(i).use { page ->
+                        val scale = RASTER_DPI / 72f
+                        val bmp = android.graphics.Bitmap.createBitmap(
+                            (page.width * scale).toInt().coerceAtLeast(1), (page.height * scale).toInt().coerceAtLeast(1),
+                            android.graphics.Bitmap.Config.ARGB_8888,
+                        )
+                        try {
+                            bmp.eraseColor(android.graphics.Color.WHITE)
+                            page.render(bmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                            val f = newCaptureFile()
+                            f.outputStream().buffered().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, it) }
+                            spec(f, PageFilter.ORIGINAL)
+                        } finally {
+                            bmp.recycle()
+                        }
+                    }
+                }
             }
         }
     }
@@ -227,18 +321,31 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
         }
     }
 
-    /** Writes all pages to a PDF in Documents/FoglioScan and clears the session. */
+    /**
+     * Writes all pages to a PDF in Documents/FoglioScan and clears the session. With [replace]
+     * and a document being extended ([editing]), that document is rewritten instead (or a new
+     * one is saved if it can no longer be written).
+     */
     suspend fun save(
         name: String,
         compression: PdfCompression = PdfCompression.MAXIMUM,
         onProgress: (Float) -> Unit = {},
+        replace: Boolean = true,
     ): Uri {
         if (settings.ocr.first()) awaitRecognized() else awaitRendered()
         val pages = exportPages()
         check(pages.isNotEmpty() && pages.size == _pages.value.size) { "Pages not ready" }
+        val write = { out: java.io.OutputStream ->
+            PdfExporter.write(out, pages, compression, name) { done -> onProgress(done.toFloat() / pages.size) }
+        }
+        val target = _editing.value?.takeIf { replace }
         val uri = withContext(Dispatchers.Default) {
-            documents.savePdf(name) { out ->
-                PdfExporter.write(out, pages, compression, name) { done -> onProgress(done.toFloat() / pages.size) }
+            if (target == null) documents.savePdf(name, write)
+            else try {
+                documents.replacePdf(Uri.parse(target.uri), name, write)
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Can't rewrite ${target.uri}, saving a new document", e)
+                documents.savePdf(name, write)
             }
         }
         withContext(Dispatchers.Main.immediate) { discard() }
@@ -252,6 +359,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
         ocrJobs.clear()
         ocrAttempted.clear()
         _pages.value = emptyList()
+        _editing.value = null
         persist()
         PageImages.clear()
         sessionDir.listFiles()?.forEach { it.delete() }
@@ -292,7 +400,11 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
             val preview = File(sessionDir, "prev-${spec.id}-$stamp.jpg")
             val result = renderGate.withLock {
                 runCatching {
-                    processor.process(File(spec.sourcePath), out, preview, spec.filter, spec.rotation, spec.quad, spec.hint)
+                    if (spec.fromPdf && spec.filter == PageFilter.ORIGINAL && spec.rotation == 0 && spec.sourcePath.endsWith(".jpg")) {
+                        processor.passThrough(File(spec.sourcePath), out, preview)
+                    } else {
+                        processor.process(File(spec.sourcePath), out, preview, spec.filter, spec.rotation, spec.quad, spec.hint)
+                    }
                 }.recoverCatching { t ->
                     // Low memory: free what we can and try once more.
                     if (t !is OutOfMemoryError) throw t
@@ -376,11 +488,14 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
 
     private fun persist() {
         saved[KEY_PAGES] = Json.encodeToString(_pages.value.map { it.spec })
+        saved[KEY_EDITING] = _editing.value?.let { Json.encodeToString(it) }
     }
 
     private companion object {
         const val TAG = "ScanSession"
         const val KEY_PAGES = "pages"
+        const val KEY_EDITING = "editing"
+        const val RASTER_DPI = 300f
         const val PDF_OVERHEAD_PER_PAGE = 600L
     }
 }

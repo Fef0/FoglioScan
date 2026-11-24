@@ -111,4 +111,11 @@
     <string name="in_app_only">Solo con la fotocamera di FoglioScan.</string>
     <string name="move_left">Sposta a sinistra</string>
     <string name="move_right">Sposta a destra</string>
+    <string name="add_pages">Aggiungi pagine</string>
+    <string name="opening_document">Apertura del documento…</string>
+    <string name="open_failed">Impossibile aprire questo PDF</string>
+    <string name="replace_original">Sostituisci “%1$s”</string>
+    <string name="replace_original_on">Il documento salvato viene aggiornato con le nuove pagine.</string>
+    <string name="replace_original_off">Salvato come nuovo documento; l\'originale resta invariato.</string>
+    <string name="discard_to_open">Le pagine acquisite andranno perse e “%1$s” verrà aperto per aggiungere pagine.</string>
 </resources>

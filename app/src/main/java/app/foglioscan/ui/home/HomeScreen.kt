@@ -74,6 +74,7 @@ fun HomeScreen(
     onScan: () -> Unit,
     onImport: () -> Unit,
     onSettings: () -> Unit,
+    onAddPages: (SavedDocument) -> Unit = {},
 ) {
     val docs by viewModel.documents.collectAsStateWithLifecycle()
     LifecycleResumeEffect(Unit) {
@@ -136,6 +137,7 @@ fun HomeScreen(
                         repository = viewModel.repository,
                         onOpen = { open(context, doc.uri) },
                         onShare = { share(context, doc.uri) },
+                        onAddPages = { onAddPages(doc) },
                         onDelete = { toDelete = doc },
                     )
                 }
@@ -189,6 +191,7 @@ private fun DocumentRow(
     repository: DocumentRepository,
     onOpen: () -> Unit,
     onShare: () -> Unit,
+    onAddPages: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -222,6 +225,12 @@ private fun DocumentRow(
                         text = { Text(stringResource(R.string.open)) },
                         leadingIcon = { Icon(painterResource(R.drawable.ic_open_in_new), null) },
                         onClick = { menu = false; onOpen() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.add_pages)) },
+                        leadingIcon = { Icon(painterResource(R.drawable.ic_add), null) },
+                        onClick = { menu = false; onAddPages() },
+                        modifier = Modifier.testTag("add-pages"),
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.share)) },

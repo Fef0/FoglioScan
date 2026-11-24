@@ -114,6 +114,36 @@ object PdfExporter {
         return PdfImage.Bilevel(out.toByteArray(), w, h)
     }
 
+    /** Decodes a 1-bit page (as written by [toBilevel]) into a lossless PNG. */
+    fun bilevelToPng(img: PdfImage.Bilevel, target: File) {
+        val w = img.width
+        val rowBytes = (w + 7) / 8
+        val inflater = java.util.zip.Inflater()
+        inflater.setInput(img.deflated)
+        val bitmap = Bitmap.createBitmap(w, img.height, Bitmap.Config.ARGB_8888)
+        try {
+            val packed = ByteArray(rowBytes)
+            val row = IntArray(w)
+            for (y in 0 until img.height) {
+                var n = 0
+                while (n < rowBytes) {
+                    val r = inflater.inflate(packed, n, rowBytes - n)
+                    if (r == 0 && (inflater.finished() || inflater.needsInput())) break
+                    n += r
+                }
+                for (x in 0 until w) {
+                    val white = (packed[x shr 3].toInt() and (0x80 ushr (x and 7))) != 0
+                    row[x] = if (white) -0x1 else -0x1000000
+                }
+                bitmap.setPixels(row, 0, w, 0, y, w, 1)
+            }
+            target.outputStream().buffered().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        } finally {
+            inflater.end()
+            bitmap.recycle()
+        }
+    }
+
     /** Packs one ARGB row into 1-bit MSB-first (1 = white), threshold at mid-grey. */
     fun packBilevelRow(row: IntArray, packed: ByteArray) {
         packed.fill(0)

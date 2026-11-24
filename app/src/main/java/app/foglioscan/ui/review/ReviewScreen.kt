@@ -35,6 +35,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -121,11 +123,15 @@ fun ReviewScreen(
     onRetry: (String) -> Unit,
     onAddPage: () -> Unit,
     onImport: () -> Unit,
-    onSave: suspend (name: String, compression: PdfCompression, progress: (Float) -> Unit) -> Unit,
+    onSave: suspend (name: String, compression: PdfCompression, replace: Boolean, progress: (Float) -> Unit) -> Unit,
     onClose: () -> Unit,
     ocrEnabled: Boolean = true,
     documentText: suspend () -> String = { "" },
     onMove: (from: Int, to: Int) -> Unit = { _, _ -> },
+    /** Name of the saved document being extended, if any. */
+    editingName: String? = null,
+    /** A saved document's pages are being read. */
+    opening: Boolean = false,
 ) {
     val pager = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
@@ -221,6 +227,18 @@ fun ReviewScreen(
             }
         },
     ) { padding ->
+        if (opening && pages.isEmpty()) {
+            Column(
+                Modifier.fillMaxSize().padding(padding),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+                Text(stringResource(R.string.opening_document), style = MaterialTheme.typography.bodyLarge)
+            }
+            return@Scaffold
+        }
         Column(Modifier.fillMaxSize().padding(padding)) {
             HorizontalPager(
                 state = pager,
@@ -270,12 +288,13 @@ fun ReviewScreen(
             defaultCompression = defaultCompression,
             estimateSizes = estimateSizes,
             onDismiss = { askName = false },
-            onConfirm = { name, compression ->
+            editingName = editingName,
+            onConfirm = { name, compression, replace ->
                 askName = false
                 saving = true
                 saveProgress = 0f
                 scope.launch {
-                    try { onSave(name, compression) { saveProgress = it } } finally { saving = false }
+                    try { onSave(name, compression, replace) { saveProgress = it } } finally { saving = false }
                 }
             },
         )
@@ -465,18 +484,20 @@ private fun SaveDialog(
     defaultCompression: PdfCompression,
     estimateSizes: suspend () -> Map<PdfCompression, Long>,
     onDismiss: () -> Unit,
-    onConfirm: (String, PdfCompression) -> Unit,
+    editingName: String?,
+    onConfirm: (String, PdfCompression, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val default = remember {
-        "Scan " + SimpleDateFormat("yyyy-MM-dd HH.mm", Locale.getDefault()).format(Date())
+        editingName ?: ("Scan " + SimpleDateFormat("yyyy-MM-dd HH.mm", Locale.getDefault()).format(Date()))
     }
+    var replace by rememberSaveable { mutableStateOf(editingName != null) }
     var nameField by remember { mutableStateOf(TextFieldValue(default, TextRange(0, default.length))) }
     var compression by rememberSaveable { mutableStateOf(defaultCompression) }
     val estimates by produceState<Map<PdfCompression, Long>?>(null) { value = runCatching { estimateSizes() }.getOrNull() }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
-    val confirm = { onConfirm(nameField.text.trim().ifEmpty { default }, compression) }
+    val confirm = { onConfirm(nameField.text.trim().ifEmpty { default }, compression, replace) }
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(painterResource(R.drawable.ic_description), null) },
@@ -493,6 +514,27 @@ private fun SaveDialog(
                     keyboardActions = KeyboardActions(onDone = { confirm() }),
                     modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
+                if (editingName != null) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .toggleable(value = replace, role = Role.Checkbox) { replace = it }
+                            .testTag("replace-original")
+                            .padding(top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = replace, onCheckedChange = null)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(stringResource(R.string.replace_original, editingName), style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                stringResource(if (replace) R.string.replace_original_on else R.string.replace_original_off),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
                 Text(
                     stringResource(R.string.pdf_quality) + " · " +

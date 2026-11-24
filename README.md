@@ -70,6 +70,7 @@ Tests:
 | JVM unit tests (`./gradlew :app:testDebugUnitTest`) | PDF structure (xref offsets, stream lengths, encodings), text layer placement / rotation / encoding, 1-bit packing, paper-size snapping, quad geometry, true-aspect recovery under perspective, warp, enhancer (shadow removal, ink, colour), auto-capture timing |
 | `OcrTest` | OCR accuracy on a clean page and on pipeline output from perspective photos; text extracted back from the saved PDF at every quality level; sideways / upside-down photos turned upright |
 | `ZoomGestureTest` | Real pinch / double-tap / pan / swipe input on the review screen |
+| `ReopenDocumentTest` | Reopening a saved PDF: pages reused byte for byte, replace vs copy, other apps' PDFs rasterized and read |
 | `ReorderGestureTest` | Long-press-and-drag page reordering, accessibility move actions |
 | `LargeDocumentTest` | 40 full-resolution pages: no failures, flat memory, every compression level, size estimate, save |
 | `PipelineTest` | Detection accuracy, A4 aspect recovery, filters, PDF |

@@ -116,4 +116,11 @@
     <string name="in_app_only">Only with the FoglioScan camera.</string>
     <string name="move_left">Move left</string>
     <string name="move_right">Move right</string>
+    <string name="add_pages">Add pages</string>
+    <string name="opening_document">Opening the document…</string>
+    <string name="open_failed">Couldn\'t open this PDF</string>
+    <string name="replace_original">Replace “%1$s”</string>
+    <string name="replace_original_on">The saved document is updated with the new pages.</string>
+    <string name="replace_original_off">Saved as a new document; the original stays as it is.</string>
+    <string name="discard_to_open">The pages you scanned will be lost, and “%1$s” will open for adding pages.</string>
 </resources>

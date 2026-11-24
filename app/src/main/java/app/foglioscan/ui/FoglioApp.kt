@@ -25,6 +25,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import app.foglioscan.R
+import app.foglioscan.data.SavedDocument
 import app.foglioscan.data.SettingsRepository
 import app.foglioscan.session.ScanSessionViewModel
 import app.foglioscan.ui.camera.CameraScreen
@@ -77,6 +78,14 @@ fun FoglioApp(startInCamera: Boolean) {
     val ocrEnabled by settings.ocr.collectAsStateWithLifecycle(true)
     val autoCapture by settings.autoCapture.collectAsStateWithLifecycle(true)
     val batchMode by settings.batchMode.collectAsStateWithLifecycle(false)
+    val editing by session.editing.collectAsStateWithLifecycle()
+    val opening by session.opening.collectAsStateWithLifecycle()
+    var pendingOpen by remember { mutableStateOf<SavedDocument?>(null) }
+    fun openForAppend(doc: SavedDocument) {
+        session.openPdf(doc.uri, doc.name)
+        backStack.retainAll { it == HomeKey }
+        backStack.add(ReviewKey)
+    }
 
     // --- Phone camera app (ACTION_IMAGE_CAPTURE) --------------------------------------------------
     // The target path survives process death: the camera app may run while we're killed.
@@ -144,9 +153,12 @@ fun FoglioApp(startInCamera: Boolean) {
         }
     }
 
-    // All pages deleted from review → nothing left to review.
-    LaunchedEffect(pages.isEmpty()) {
-        if (pages.isEmpty() && backStack.lastOrNull() == ReviewKey) backStack.removeAt(backStack.lastIndex)
+    // All pages deleted from review (or a document failed to open) → nothing left to review.
+    LaunchedEffect(pages.isEmpty(), opening) {
+        if (pages.isEmpty() && !opening && backStack.lastOrNull() == ReviewKey) {
+            backStack.removeAt(backStack.lastIndex)
+            if (session.consumeOpenError()) homeSnackbar.showSnackbar(context.getString(R.string.open_failed))
+        }
     }
 
     NavDisplay(
@@ -159,6 +171,7 @@ fun FoglioApp(startInCamera: Boolean) {
                     onScan = { startScan() },
                     onImport = { importFromFiles() },
                     onSettings = { backStack.add(SettingsKey) },
+                    onAddPages = { doc -> if (pages.isEmpty()) openForAppend(doc) else pendingOpen = doc },
                 )
             }
             entry<CameraKey> {
@@ -198,9 +211,9 @@ fun FoglioApp(startInCamera: Boolean) {
                     onDelete = session::delete,
                     onAddPage = { startScan() },
                     onImport = { importFromFiles() },
-                    onSave = { name, compression, progress ->
+                    onSave = { name, compression, replace, progress ->
                         scope.launch { settings.setPdfCompression(compression) }
-                        runCatching { session.save(name, compression, progress) }
+                        runCatching { session.save(name, compression, progress, replace) }
                             .onSuccess { uri ->
                                 backStack.retainAll { it == HomeKey }
                                 scope.launch {
@@ -219,6 +232,8 @@ fun FoglioApp(startInCamera: Boolean) {
                     ocrEnabled = ocrEnabled,
                     documentText = { session.documentText() },
                     onMove = session::move,
+                    editingName = editing?.name,
+                    opening = opening,
                 )
             }
             entry<SettingsKey> {
@@ -240,6 +255,18 @@ fun FoglioApp(startInCamera: Boolean) {
             }
         },
     )
+
+    pendingOpen?.let { doc ->
+        AlertDialog(
+            onDismissRequest = { pendingOpen = null },
+            title = { Text(stringResource(R.string.discard_title)) },
+            text = { Text(stringResource(R.string.discard_to_open, doc.name)) },
+            confirmButton = {
+                TextButton(onClick = { pendingOpen = null; openForAppend(doc) }) { Text(stringResource(R.string.discard)) }
+            },
+            dismissButton = { TextButton(onClick = { pendingOpen = null }) { Text(stringResource(R.string.keep_editing)) } },
+        )
+    }
 
     if (confirmDiscard) {
         AlertDialog(

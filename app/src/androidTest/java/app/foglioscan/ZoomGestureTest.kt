@@ -172,7 +172,7 @@ class ZoomGestureTest {
                 ReviewScreen(
                     pages = pages, snackbar = SnackbarHostState(), defaultCompression = PdfCompression.BALANCED,
                     estimateSizes = { emptyMap() }, onFilter = { _, _ -> }, onRotate = {}, onCrop = {}, onDelete = {},
-                    onRetry = {}, onAddPage = {}, onImport = {}, onSave = { _, _, _ -> }, onClose = {},
+                    onRetry = {}, onAddPage = {}, onImport = {}, onSave = { _, _, _, _ -> }, onClose = {},
                 )
             }
         }
