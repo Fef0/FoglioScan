@@ -3,6 +3,7 @@ package app.foglioscan.pdf
 import android.graphics.Bitmap
 import app.foglioscan.imaging.PageFilter
 import app.foglioscan.imaging.PageProcessor
+import app.foglioscan.ocr.PageText
 import kotlinx.serialization.Serializable
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -33,8 +34,14 @@ enum class PdfCompression(
     SMALLEST(1240, 48, true),
 }
 
-/** A rendered page ready for export. */
-class ExportPage(val file: File, val widthPx: Int, val heightPx: Int, val filter: PageFilter)
+/** A rendered page ready for export, with its recognized text (searchable layer) if any. */
+class ExportPage(
+    val file: File,
+    val widthPx: Int,
+    val heightPx: Int,
+    val filter: PageFilter,
+    val text: PageText? = null,
+)
 
 object PdfExporter {
 
@@ -46,7 +53,7 @@ object PdfExporter {
         title: String,
         onProgress: (done: Int) -> Unit = {},
     ) {
-        PdfWriter.write(out, pages.size, title) { i ->
+        PdfWriter.write(out, pages.size, title, text = { pages[it].text }) { i ->
             encode(pages[i], compression).also { onProgress(i + 1) }
         }
     }

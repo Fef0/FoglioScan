@@ -13,8 +13,8 @@ android {
         applicationId = "app.foglioscan"
         minSdk = 29
         targetSdk = 37
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -100,6 +100,9 @@ dependencies {
     // neural document detector.
     implementation(libs.litert)
     implementation(libs.litert.gpu)
+
+    // On-device OCR: ML Kit Text Recognition v2, Latin model bundled (offline, no Play services).
+    implementation(libs.mlkit.text.recognition)
 
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)

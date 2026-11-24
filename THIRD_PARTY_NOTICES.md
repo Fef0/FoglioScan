@@ -17,6 +17,11 @@ Real-photo benchmark frames, CC BY 4.0. J.-C. Burie et al., "ICDAR2015 Competiti
 Document Capture and OCR (SmartDoc)", ICDAR 2015.
 https://github.com/jchazalon/smartdoc15-ch1-dataset
 
+## ML Kit Text Recognition v2
+
+`com.google.mlkit:text-recognition` (on-device OCR, Latin model bundled in the APK). Use is subject
+to the ML Kit Terms of Service: https://developers.google.com/ml-kit/terms
+
 ## LiteRT
 
 Google LiteRT (`com.google.ai.edge.litert`), Apache-2.0.

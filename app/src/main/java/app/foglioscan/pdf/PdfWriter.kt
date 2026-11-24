@@ -1,5 +1,6 @@
 package app.foglioscan.pdf
 
+import app.foglioscan.ocr.PageText
 import java.io.OutputStream
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -29,15 +30,23 @@ sealed interface PdfImage {
  * Minimal PDF 1.7 writer. Pages are produced one at a time by [write]'s `page` callback and
  * written straight to the stream, so memory use is independent of the number of pages.
  *
- * TODO(OCR): add an invisible text layer per page (text render mode 3) to make the PDF
- *  searchable/selectable. See TODO.md.
+ * Pages with recognized text get an invisible text layer ([PdfTextLayer]): the PDF is
+ * searchable and its text selectable.
  */
 object PdfWriter {
 
-    fun write(out: OutputStream, pageCount: Int, title: String, page: (index: Int) -> PdfImage) {
+    fun write(
+        out: OutputStream,
+        pageCount: Int,
+        title: String,
+        text: (index: Int) -> PageText? = { null },
+        page: (index: Int) -> PdfImage,
+    ) {
         require(pageCount > 0)
         val w = CountingStream(out)
-        val offsets = LongArray(3 + pageCount * 3)
+        // 1: catalog, 2: page tree, 3: info; per page: page, content, image; last: font.
+        val fontObj = 4 + pageCount * 3
+        val offsets = LongArray(fontObj)
 
         fun beginObj(num: Int) {
             offsets[num - 1] = w.count
@@ -47,7 +56,6 @@ object PdfWriter {
         w.ascii("%PDF-1.7\n")
         w.write(byteArrayOf('%'.code.toByte(), 0xE2.toByte(), 0xE3.toByte(), 0xCF.toByte(), 0xD3.toByte(), '\n'.code.toByte()))
 
-        // 1: catalog, 2: page tree, 3: info; then per page: page, content stream, image.
         beginObj(1); w.ascii("<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
         beginObj(2)
         w.ascii("<< /Type /Pages /Kids [")
@@ -60,12 +68,14 @@ object PdfWriter {
             val image = page(index)
             val pageObj = 4 + index * 3
             val (pw, ph) = pageSizePoints(image.width, image.height)
-            val content = "q ${fmt(pw)} 0 0 ${fmt(ph)} 0 0 cm /Im0 Do Q\n"
+            val content = "q ${fmt(pw)} 0 0 ${fmt(ph)} 0 0 cm /Im0 Do Q\n" +
+                (text(index)?.let { PdfTextLayer.content(it, pw, ph) } ?: "")
 
             beginObj(pageObj)
             w.ascii(
                 "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${fmt(pw)} ${fmt(ph)}] " +
-                    "/Resources << /XObject << /Im0 ${pageObj + 2} 0 R >> /ProcSet [/PDF /ImageC /ImageB] >> " +
+                    "/Resources << /XObject << /Im0 ${pageObj + 2} 0 R >> /Font << /${PdfTextLayer.FONT_RESOURCE} $fontObj 0 R >> " +
+                    "/ProcSet [/PDF /Text /ImageC /ImageB] >> " +
                     "/Contents ${pageObj + 1} 0 R >>\nendobj\n",
             )
             beginObj(pageObj + 1)
@@ -90,6 +100,8 @@ object PdfWriter {
             }
             w.ascii("\nendstream\nendobj\n")
         }
+        beginObj(fontObj)
+        w.ascii("${PdfTextLayer.FONT_DICT}\nendobj\n")
 
         val xref = w.count
         w.ascii("xref\n0 ${offsets.size + 1}\n0000000000 65535 f \n")

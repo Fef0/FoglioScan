@@ -112,6 +112,8 @@ fun ReviewScreen(
     onImport: () -> Unit,
     onSave: suspend (name: String, compression: PdfCompression, progress: (Float) -> Unit) -> Unit,
     onClose: () -> Unit,
+    ocrEnabled: Boolean = true,
+    documentText: suspend () -> String = { "" },
 ) {
     val pager = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
@@ -119,6 +121,7 @@ fun ReviewScreen(
     var saving by remember { mutableStateOf(false) }
     var saveProgress by remember { mutableFloatStateOf(0f) }
     var zoomed by remember { mutableStateOf(false) }
+    var showText by rememberSaveable { mutableStateOf(false) }
 
     // Jump to a newly added page.
     var lastCount by remember { mutableStateOf(pages.size) }
@@ -145,6 +148,9 @@ fun ReviewScreen(
                     if (current != null) {
                         IconButton(onClick = { onCrop(current.spec.id) }) {
                             Icon(painterResource(R.drawable.ic_crop), stringResource(R.string.adjust_corners))
+                        }
+                        IconButton(onClick = { showText = true }, modifier = Modifier.testTag("text")) {
+                            Icon(painterResource(R.drawable.ic_notes), stringResource(R.string.recognized_text))
                         }
                         IconButton(onClick = { onRotate(current.spec.id) }) {
                             Icon(painterResource(R.drawable.ic_rotate_right), stringResource(R.string.rotate))
@@ -223,6 +229,16 @@ fun ReviewScreen(
                 Thumbnails(pages, pager.currentPage) { scope.launch { pager.animateScrollToPage(it) } }
             }
         }
+    }
+
+    if (showText && current != null) {
+        TextSheet(
+            page = current,
+            ocrEnabled = ocrEnabled,
+            documentText = documentText,
+            snackbar = snackbar,
+            onDismiss = { showText = false },
+        )
     }
 
     if (askName) {

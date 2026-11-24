@@ -1,21 +1,16 @@
 # TODO
 
-## 1. On-device OCR (next major feature)
+## 1. On-device OCR
 
-Goal: searchable / selectable PDFs and text export, fully offline.
+Done in 0.4.0: ML Kit Text Recognition v2 (bundled Latin model, offline) runs in the background on
+each enhanced page; saved PDFs get an invisible, rotated, width-fitted text layer (Helvetica /
+WinAnsi, so copy & paste works in every viewer); review has "Recognized text" with copy / share.
 
-- [ ] **Engine**: ML Kit Text Recognition v2 (on-device, Latin + Chinese/Devanagari/Japanese/Korean
-      script models). Evaluate against a LiteRT-hosted model (e.g. PaddleOCR PP-OCRv5 mobile) for
-      accuracy on dense documents and Italian accents.
-- [ ] Run OCR on the *enhanced* page (`PageProcessor.Output.file`), in the background after each page
-      is rendered, so saving stays instant.
-- [ ] **Searchable PDF**: in `JpegPdfWriter`, add an invisible text layer per page
-      (text render mode `3 Tr`) with one positioned run per recognized line/word, mapped from image
-      pixels to PDF points. Embed a small font subset (or use standard Helvetica + `/ToUnicode` CMap)
-      so copy/paste returns correct Unicode.
+- [ ] Evaluate PaddleOCR PP-OCRv5 mobile on LiteRT against ML Kit on dense pages.
+- [ ] Non-Latin scripts (ML Kit Chinese / Devanagari / Japanese / Korean models, downloaded on demand)
+      — needs an embedded font subset + `/ToUnicode` CMap instead of WinAnsi Helvetica.
 - [ ] Store recognized text alongside the PDF (XMP metadata or a sidecar) for in-app search.
 - [ ] In-app search across saved documents.
-- [ ] "Copy text" / "Share as text" actions on the review screen.
 - [ ] Use OCR line orientation to auto-rotate pages scanned upside down / sideways.
 
 ## 2. Best-in-class ML upgrades
@@ -49,10 +44,10 @@ can be swapped for a learned model without touching the UI.
 
 ## 3. Capture UX
 
-- [ ] Auto-capture when the outline is stable for ~1 s (with a setting).
+- [x] Auto-capture when the outline is stable for ~1 s (AUTO toggle in the camera + setting).
 - [ ] Tap-to-focus / exposure lock on the viewfinder.
 - [ ] Glare detection hint ("Tilt to avoid reflections").
-- [ ] Batch mode (keep shooting without visiting review between pages).
+- [x] Batch mode (keep shooting without visiting review between pages).
 - [ ] Book mode: split a two-page spread into two pages.
 
 ## 4. Documents
@@ -67,7 +62,7 @@ can be swapped for a learned model without touching the UI.
 
 ## 5. Engineering
 
-- [ ] JVM unit tests for `JpegPdfWriter`, `Quad`, homography and aspect-ratio recovery.
-- [ ] Baseline Profiles for faster startup.
+- [x] JVM unit tests for the PDF writer / text layer, geometry, enhancer, auto-capture.
+- [x] Baseline Profiles for faster startup.
 - [ ] CI (build + instrumented tests on a Gradle Managed Device).
-- [ ] Real signing config for release builds.
+- [ ] Real signing config for release builds (test APKs use the debug key).

@@ -84,4 +84,29 @@
     <string name="quality_small_desc">150 dpi · ideale per l\'email</string>
     <string name="quality_smallest">Minima</string>
     <string name="quality_smallest_desc">100 dpi · ancora leggibile</string>
+
+    <!-- Text recognition -->
+    <string name="recognized_text">Testo riconosciuto</string>
+    <string name="text_none">Nessun testo trovato in questa pagina.</string>
+    <string name="text_reading">Lettura del testo…</string>
+    <string name="text_off">Il riconoscimento del testo è disattivato. Attivalo nelle Impostazioni o leggi questa pagina ora.</string>
+    <string name="read_now">Leggi ora</string>
+    <string name="copy_page">Copia pagina</string>
+    <string name="share_all_text">Condividi tutto il testo</string>
+    <string name="text_copied">Testo copiato</string>
+    <string name="settings_text">Testo</string>
+    <string name="ocr">PDF ricercabile</string>
+    <string name="ocr_desc">Riconosce il testo di ogni pagina, direttamente sul telefono. Nei PDF salvati si può cercare e copiare il testo.</string>
+
+    <!-- Capture -->
+    <string name="auto_capture">Scatto automatico</string>
+    <string name="auto_capture_desc">Scatta da solo quando la pagina resta ferma.</string>
+    <string name="auto_capture_toggle">Scatto automatico: %1$s</string>
+    <string name="on">attivo</string>
+    <string name="off">disattivo</string>
+    <string name="batch_mode">Scansione in serie</string>
+    <string name="batch_mode_desc">La fotocamera resta aperta dopo ogni scatto, per acquisire molte pagine di fila. Tocca la pila di pagine per rivederle.</string>
+    <string name="hint_hold_steady">Tieni fermo…</string>
+    <string name="hint_next_page">Acquisita · inquadra la pagina successiva</string>
+    <string name="in_app_only">Solo con la fotocamera di FoglioScan.</string>
 </resources>

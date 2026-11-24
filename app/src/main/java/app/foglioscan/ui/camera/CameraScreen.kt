@@ -51,7 +51,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,6 +61,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -82,6 +90,7 @@ import app.foglioscan.R
 import app.foglioscan.camera.FlashMode
 import app.foglioscan.camera.ScannerCamera
 import app.foglioscan.vision.Quad
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -97,6 +106,9 @@ fun CameraScreen(
     onHighlightColorChange: (Color) -> Unit,
     onDone: () -> Unit,
     onClose: () -> Unit,
+    autoCapture: Boolean = false,
+    onAutoCaptureChange: (Boolean) -> Unit = {},
+    batchMode: Boolean = false,
 ) {
     val context = LocalContext.current
     var granted by remember {
@@ -127,6 +139,9 @@ fun CameraScreen(
                 onPickColor = { showColors = true },
                 onDone = onDone,
                 onClose = onClose,
+                autoCapture = autoCapture,
+                onAutoCaptureChange = onAutoCaptureChange,
+                batchMode = batchMode,
             )
         } else {
             PermissionRationale(
@@ -164,6 +179,9 @@ private fun ScannerViewfinder(
     onPickColor: () -> Unit,
     onDone: () -> Unit,
     onClose: () -> Unit,
+    autoCapture: Boolean,
+    onAutoCaptureChange: (Boolean) -> Unit,
+    batchMode: Boolean,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -188,6 +206,44 @@ private fun ScannerViewfinder(
         wasDetected = quad != null
     }
 
+    // In batch mode, a short confirmation after each page instead of leaving the camera.
+    var captured by remember { mutableStateOf(0) }
+    var showCaptured by remember { mutableStateOf(false) }
+    LaunchedEffect(captured) {
+        if (captured > 0 && batchMode) { showCaptured = true; delay(1600); showCaptured = false }
+    }
+
+    fun shoot() {
+        if (capturing) return
+        capturing = true
+        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+        val hint = quad
+        scope.launch {
+            flashOverlay.snapTo(0.8f)
+            launch { flashOverlay.animateTo(0f, tween(260)) }
+            runCatching { camera.capture(newCaptureFile()) }
+                .onSuccess { onCaptured(it, hint); captured++ }
+            capturing = false
+        }
+    }
+
+    // Auto-capture: shoot once the outline has stayed put for HOLD_MS. After a shot, the page
+    // must leave the frame (or a different page appear) before the next one, so the same
+    // sheet is never captured twice.
+    var steadiness by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(autoCapture) {
+        steadiness = 0f
+        if (!autoCapture) return@LaunchedEffect
+        val detector = AutoCaptureDetector()
+        while (true) {
+            withFrameMillis { now ->
+                val fire = detector.update(camera.liveQuad.value, now, busy = capturing)
+                steadiness = detector.progress
+                if (fire) shoot()
+            }
+        }
+    }
+
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -200,6 +256,7 @@ private fun ScannerViewfinder(
                 Icon(painterResource(R.drawable.ic_close), stringResource(R.string.close))
             }
             Spacer(Modifier.weight(1f))
+            AutoCaptureToggle(autoCapture, highlightColor) { onAutoCaptureChange(!autoCapture) }
             if (hdrActive) {
                 Icon(
                     painterResource(R.drawable.ic_hdr_on), stringResource(R.string.hdr_active),
@@ -240,6 +297,12 @@ private fun ScannerViewfinder(
             DetectionHint(
                 detected = quad != null,
                 color = highlightColor,
+                message = when {
+                    showCaptured -> R.string.hint_next_page
+                    quad == null -> R.string.hint_searching
+                    autoCapture && steadiness > 0f -> R.string.hint_hold_steady
+                    else -> R.string.hint_detected
+                },
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
             )
         }
@@ -256,18 +319,8 @@ private fun ScannerViewfinder(
             ShutterButton(
                 enabled = !capturing,
                 ringColor = if (quad != null) highlightColor else Color.White,
-                onClick = {
-                    capturing = true
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    val hint = quad
-                    scope.launch {
-                        flashOverlay.snapTo(0.8f)
-                        launch { flashOverlay.animateTo(0f, tween(260)) }
-                        runCatching { camera.capture(newCaptureFile()) }
-                            .onSuccess { onCaptured(it, hint) }
-                        capturing = false
-                    }
-                },
+                progress = steadiness,
+                onClick = ::shoot,
             )
             PagesButton(pageCount, lastPage, onDone, Modifier.size(56.dp))
         }
@@ -299,33 +352,63 @@ private fun PageHighlight(quad: Quad?, color: Color, modifier: Modifier) {
 }
 
 @Composable
-private fun DetectionHint(detected: Boolean, color: Color, modifier: Modifier) {
+private fun DetectionHint(detected: Boolean, color: Color, message: Int, modifier: Modifier) {
     Surface(modifier, shape = CircleShape, color = Color.Black.copy(alpha = 0.55f), contentColor = Color.White) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(10.dp).clip(CircleShape).background(if (detected) color else Color.White.copy(alpha = 0.4f)))
             Spacer(Modifier.width(8.dp))
-            Text(
-                stringResource(if (detected) R.string.hint_detected else R.string.hint_searching),
-                style = MaterialTheme.typography.labelLarge,
-            )
+            Text(stringResource(message), style = MaterialTheme.typography.labelLarge)
         }
     }
 }
 
 @Composable
-private fun ShutterButton(enabled: Boolean, ringColor: Color, onClick: () -> Unit) {
+private fun ShutterButton(enabled: Boolean, ringColor: Color, progress: Float, onClick: () -> Unit) {
     val ring by androidx.compose.animation.animateColorAsState(ringColor, label = "ring")
     Box(
         Modifier
             .size(80.dp)
             .testTag("shutter")
             .clip(CircleShape)
-            .border(4.dp, ring, CircleShape)
+            .border(4.dp, ring.copy(alpha = if (progress > 0f) 0.4f else 1f), CircleShape)
+            .drawWithContent {
+                drawContent()
+                // Auto-capture countdown around the shutter.
+                if (progress > 0f) {
+                    val w = 4.dp.toPx()
+                    drawArc(
+                        ring, startAngle = -90f, sweepAngle = 360f * progress, useCenter = false,
+                        topLeft = Offset(w / 2, w / 2), size = Size(size.width - w, size.height - w),
+                        style = Stroke(width = w, cap = StrokeCap.Round),
+                    )
+                }
+            }
             .padding(8.dp)
             .clip(CircleShape)
             .background(if (enabled) Color.White else Color.White.copy(alpha = 0.5f))
             .clickable(enabled = enabled, onClickLabel = stringResource(R.string.scan), onClick = onClick),
     )
+}
+
+@Composable
+private fun AutoCaptureToggle(on: Boolean, color: Color, onClick: () -> Unit) {
+    val label = stringResource(R.string.auto_capture_toggle, stringResource(if (on) R.string.on else R.string.off))
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (on) color else Color.White.copy(alpha = 0.15f),
+        contentColor = if (on) Color.Black else Color.White,
+        modifier = Modifier
+            .padding(horizontal = 4.dp)
+            .testTag("auto-capture")
+            .semantics { contentDescription = label },
+    ) {
+        Text(
+            "AUTO",
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp).clearAndSetSemantics {},
+        )
+    }
 }
 
 @Composable

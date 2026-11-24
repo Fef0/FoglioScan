@@ -19,3 +19,11 @@
 }
 
 # kotlinx.serialization and AndroidX ship their own consumer rules.
+
+# ML Kit text recognition: components are registered and wired by reflection; R8 full mode
+# otherwise strips fields they need (NullPointerException when the recognizer is created).
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_text_common.** { *; }
+-keep class com.google.android.gms.internal.mlkit_vision_common.** { *; }
+-keep class com.google.android.gms.internal.mlkit_common.** { *; }
+-keep class com.google.firebase.components.** { *; }

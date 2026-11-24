@@ -10,6 +10,8 @@ import app.foglioscan.data.DocumentRepository
 import app.foglioscan.data.SettingsRepository
 import app.foglioscan.imaging.PageFilter
 import app.foglioscan.imaging.PageProcessor
+import app.foglioscan.ocr.PageText
+import app.foglioscan.ocr.TextRecognizer
 import app.foglioscan.pdf.ExportPage
 import app.foglioscan.pdf.PdfCompression
 import app.foglioscan.pdf.PdfExporter
@@ -61,6 +63,8 @@ data class PageState(
     val heightPx: Int = 0,
     val processing: Boolean = true,
     val failed: Boolean = false,
+    /** Recognized text of [output]; null until OCR has run (or when it is turned off). */
+    val text: PageText? = null,
 )
 
 /**
@@ -78,6 +82,10 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
     /** One page renders at a time: full-resolution buffers are large. */
     private val renderGate = Mutex()
     private val jobs = mutableMapOf<String, Job>()
+
+    /** OCR runs after rendering, one page at a time, without blocking the next rendering. */
+    private val ocrGate = Mutex()
+    private val ocrJobs = mutableMapOf<String, Job>()
 
     private val _pages = MutableStateFlow<List<PageState>>(emptyList())
     val pages: StateFlow<List<PageState>> = _pages.asStateFlow()
@@ -135,6 +143,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
 
     fun delete(id: String) {
         jobs.remove(id)?.cancel()
+        ocrJobs.remove(id)?.cancel()
         val page = _pages.value.firstOrNull { it.spec.id == id } ?: return
         _pages.update { list -> list.filterNot { it.spec.id == id } }
         persist()
@@ -157,6 +166,27 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
             withContext(Dispatchers.Main.immediate) { jobs.values.toList() }.joinAll()
             if (_pages.value.none { it.processing }) return
         }
+    }
+
+    /**
+     * Waits until every page's text is recognized, starting OCR for pages that don't have it
+     * yet (e.g. OCR was just turned on).
+     */
+    suspend fun awaitRecognized() {
+        awaitRendered()
+        withContext(Dispatchers.Main.immediate) {
+            _pages.value.forEach { p ->
+                val out = p.output
+                if (out != null && p.text == null && p.spec.id !in ocrJobs) recognize(p.spec.id, out, p.widthPx, p.heightPx, force = true)
+            }
+            ocrJobs.values.toList()
+        }.joinAll()
+    }
+
+    /** The whole document's recognized text, pages separated by a blank line. */
+    suspend fun documentText(): String {
+        awaitRecognized()
+        return _pages.value.mapNotNull { it.text?.plain?.takeIf(String::isNotBlank) }.joinToString("\n\n")
     }
 
     /**
@@ -188,7 +218,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
         compression: PdfCompression = PdfCompression.MAXIMUM,
         onProgress: (Float) -> Unit = {},
     ): Uri {
-        awaitRendered()
+        if (settings.ocr.first()) awaitRecognized() else awaitRendered()
         val pages = exportPages()
         check(pages.isNotEmpty() && pages.size == _pages.value.size) { "Pages not ready" }
         val uri = withContext(Dispatchers.Default) {
@@ -203,6 +233,8 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
     fun discard() {
         jobs.values.forEach { it.cancel() }
         jobs.clear()
+        ocrJobs.values.forEach { it.cancel() }
+        ocrJobs.clear()
         _pages.value = emptyList()
         persist()
         PageImages.clear()
@@ -212,7 +244,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
     // --- internals ------------------------------------------------------------------------------
 
     private fun exportPages() = _pages.value.mapNotNull { p ->
-        p.output?.let { ExportPage(it, p.widthPx, p.heightPx, p.spec.filter) }
+        p.output?.let { ExportPage(it, p.widthPx, p.heightPx, p.spec.filter, p.text) }
     }
 
     private fun addSpec(spec: PageSpec) {
@@ -227,7 +259,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
             list.map { p ->
                 if (p.spec.id == id) {
                     val s = change(p.spec); updated = s
-                    p.copy(spec = s, processing = true, failed = false)
+                    p.copy(spec = s, processing = true, failed = false, text = null)
                 } else p
             }
         }
@@ -237,6 +269,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
 
     private fun render(spec: PageSpec) {
         jobs.remove(spec.id)?.cancel()
+        ocrJobs.remove(spec.id)?.cancel()
         val job = viewModelScope.launch {
             val stamp = System.nanoTime()
             val out = File(sessionDir, "out-${spec.id}-$stamp.jpg")
@@ -263,13 +296,16 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
                                 spec = p.spec.copy(quad = p.spec.quad ?: r.quad),
                                 previewFile = r.previewFile,
                                 output = r.file, widthPx = r.widthPx, heightPx = r.heightPx,
-                                processing = false, failed = false,
+                                processing = false, failed = false, text = null,
                             )
                         }
                     }
                 }
                 if (old == null) deleteRendering(r.file, r.previewFile) // page deleted meanwhile
-                else deleteRendering(old?.output, old?.previewFile)
+                else {
+                    deleteRendering(old?.output, old?.previewFile)
+                    recognize(spec.id, r.file, r.widthPx, r.heightPx)
+                }
                 persist()
             }.onFailure { t ->
                 deleteRendering(out, preview)
@@ -280,6 +316,27 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
         }
         jobs[spec.id] = job
         job.invokeOnCompletion { if (jobs[spec.id] === job) jobs.remove(spec.id) }
+    }
+
+    /** Recognizes the text of rendering [file] of page [id] in the background (if OCR is on, or [force]). */
+    private fun recognize(id: String, file: File, widthPx: Int, heightPx: Int, force: Boolean = false) {
+        ocrJobs.remove(id)?.cancel()
+        val job = viewModelScope.launch {
+            if (!force && !settings.ocr.first()) return@launch
+            val text = ocrGate.withLock {
+                try {
+                    TextRecognizer.recognize(file, widthPx, heightPx)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (t: Throwable) {
+                    Log.w(TAG, "OCR of $id failed", t)
+                    null
+                }
+            } ?: return@launch
+            _pages.update { list -> list.map { if (it.spec.id == id && it.output == file) it.copy(text = text) else it } }
+        }
+        ocrJobs[id] = job
+        job.invokeOnCompletion { if (ocrJobs[id] === job) ocrJobs.remove(id) }
     }
 
     private fun deleteRendering(vararg files: File?) {

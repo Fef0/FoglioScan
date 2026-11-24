@@ -89,4 +89,29 @@
     <string name="quality_small_desc">150 dpi · ideal for email</string>
     <string name="quality_smallest">Smallest</string>
     <string name="quality_smallest_desc">100 dpi · still readable</string>
+
+    <!-- Text recognition -->
+    <string name="recognized_text">Recognized text</string>
+    <string name="text_none">No text found on this page.</string>
+    <string name="text_reading">Reading the text…</string>
+    <string name="text_off">Text recognition is off. Turn it on in Settings, or read this page now.</string>
+    <string name="read_now">Read now</string>
+    <string name="copy_page">Copy page</string>
+    <string name="share_all_text">Share all text</string>
+    <string name="text_copied">Text copied</string>
+    <string name="settings_text">Text</string>
+    <string name="ocr">Searchable PDF</string>
+    <string name="ocr_desc">Recognizes the text of every page, on the phone. Saved PDFs can be searched and their text copied.</string>
+
+    <!-- Capture -->
+    <string name="auto_capture">Auto-capture</string>
+    <string name="auto_capture_desc">Takes the photo by itself once the page is held steady.</string>
+    <string name="auto_capture_toggle">Auto-capture: %1$s</string>
+    <string name="on">on</string>
+    <string name="off">off</string>
+    <string name="batch_mode">Batch scanning</string>
+    <string name="batch_mode_desc">The camera stays open after each shot, to scan many pages in a row. Tap the page stack to review.</string>
+    <string name="hint_hold_steady">Hold steady…</string>
+    <string name="hint_next_page">Captured · show the next page</string>
+    <string name="in_app_only">Only with the FoglioScan camera.</string>
 </resources>

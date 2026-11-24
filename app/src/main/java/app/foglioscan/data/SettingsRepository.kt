@@ -45,6 +45,18 @@ class SettingsRepository(context: Context) {
         p[COMPRESSION]?.let { runCatching { PdfCompression.valueOf(it) }.getOrNull() } ?: PdfCompression.BALANCED
     }
 
+    /** Recognize text on every page and make saved PDFs searchable. */
+    val ocr: Flow<Boolean> = store.data.map { it[OCR] ?: true }
+
+    /** Take the photo automatically once the page has been held steady for a moment. */
+    val autoCapture: Flow<Boolean> = store.data.map { it[AUTO_CAPTURE] ?: true }
+
+    /** Keep the camera open after each shot, to scan many pages in a row. */
+    val batchMode: Flow<Boolean> = store.data.map { it[BATCH] ?: false }
+
+    suspend fun setOcr(enabled: Boolean) = store.edit { it[OCR] = enabled }
+    suspend fun setAutoCapture(enabled: Boolean) = store.edit { it[AUTO_CAPTURE] = enabled }
+    suspend fun setBatchMode(enabled: Boolean) = store.edit { it[BATCH] = enabled }
     suspend fun setPdfCompression(c: PdfCompression) = store.edit { it[COMPRESSION] = c.name }
     suspend fun setCameraSource(source: CameraSource) = store.edit { it[SOURCE] = source.name }
     suspend fun setPhoneHdr(enabled: Boolean) = store.edit { it[HDR] = enabled }
@@ -58,5 +70,8 @@ class SettingsRepository(context: Context) {
         private val SOURCE = stringPreferencesKey("camera_source")
         private val HDR = booleanPreferencesKey("phone_hdr")
         private val COMPRESSION = stringPreferencesKey("pdf_compression")
+        private val OCR = booleanPreferencesKey("ocr")
+        private val AUTO_CAPTURE = booleanPreferencesKey("auto_capture")
+        private val BATCH = booleanPreferencesKey("batch_mode")
     }
 }

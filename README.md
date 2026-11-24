@@ -16,9 +16,11 @@ Shutter ──► full-res photo (FoglioScan camera, optionally with the phone's
         ──► homography warp
         ──► enhancement: illumination flattening (shadow-aware) · white balance · levels · unsharp mask
         ──► JPEG on disk (any number of pages: nothing is kept in memory)
+        ──► OCR in the background (ML Kit Text Recognition v2, on-device)
 Save    ──► PDF streamed page by page, at the chosen quality:
             Maximum ≈300 dpi (pass-through) · Balanced ≈200 dpi · Small ≈150 dpi · Smallest ≈100 dpi
             black & white pages → 1-bit Flate (crisp text, a few dozen KB per page)
+            invisible text layer → searchable PDF, text selectable and copyable
 ```
 
 | Layer | Tech |
@@ -27,9 +29,10 @@ Save    ──► PDF streamed page by page, at the chosen quality:
 | Camera | CameraX 1.6 + `camera-compose` viewfinder |
 | ML | LiteRT 2.3 `CompiledModel` API, GPU accelerator with CPU fallback |
 | Detection | DocAligner LCNet-100 heatmap model; classic Canny/Hough fallback |
+| OCR | ML Kit Text Recognition v2, Latin model bundled (offline, no Play services needed) |
 | Imaging | Pure Kotlin, multithreaded (no OpenCV / native image libs) |
 | Storage | MediaStore → `Documents/FoglioScan` (no storage permission), DataStore for settings |
-| PDF | Custom streaming PDF 1.7 writer: JPEG pass-through (DCTDecode) and 1-bit Flate images |
+| PDF | Custom streaming PDF 1.7 writer: JPEG pass-through (DCTDecode), 1-bit Flate images, invisible OCR text layer |
 
 Min SDK 29 (Android 10), target/compile SDK 37. Languages: English, Italian.
 
@@ -38,12 +41,13 @@ Min SDK 29 (Android 10), target/compile SDK 37. Languages: English, Italian.
 ```
 app/src/main/java/app/foglioscan/
   camera/     ScannerCamera – preview, capture, live analysis + temporal smoothing
-  vision/     NeuralDocumentDetector (LiteRT), DocumentDetector (classic + refinement), DocumentLocator, Quad
+  vision/     NeuralDocumentDetector (LiteRT), DocumentDetector (classic fallback), DocumentLocator, Quad
   imaging/    PageProcessor (pipeline), PerspectiveWarp (homography + aspect recovery), PageEnhancer
-  pdf/        JpegPdfWriter
+  ocr/        TextRecognizer (ML Kit), PageText
+  pdf/        PdfWriter, PdfExporter (compression levels), PdfTextLayer (searchable text)
   session/    ScanSessionViewModel – multipage document, survives process death
   data/       DocumentRepository (MediaStore), SettingsRepository (DataStore)
-  ui/         home, camera (+ highlight colour picker), review, crop (corner editor with loupe)
+  ui/         home, camera (highlight colour, auto-capture, batch), review (+ recognized text), crop, settings
 tools/        test-photo generator, model conversion helpers
 ```
 
@@ -58,7 +62,8 @@ Tests:
 
 | Suite | What it checks |
 |---|---|
-| JVM unit tests (`./gradlew :app:testDebugUnitTest`) | PDF structure (xref offsets, stream lengths, encodings), 1-bit packing, paper-size snapping, quad geometry, true-aspect recovery under perspective, warp, enhancer (shadow removal, ink, colour) |
+| JVM unit tests (`./gradlew :app:testDebugUnitTest`) | PDF structure (xref offsets, stream lengths, encodings), text layer placement / rotation / encoding, 1-bit packing, paper-size snapping, quad geometry, true-aspect recovery under perspective, warp, enhancer (shadow removal, ink, colour), auto-capture timing |
+| `OcrTest` | OCR accuracy on a clean page and on pipeline output from perspective photos; text extracted back from the saved PDF at every quality level |
 | `ZoomGestureTest` | Real pinch / double-tap / pan / swipe input on the review screen |
 | `LargeDocumentTest` | 40 full-resolution pages: no failures, flat memory, every compression level, size estimate, save |
 | `PipelineTest` | Detection accuracy, A4 aspect recovery, filters, PDF |

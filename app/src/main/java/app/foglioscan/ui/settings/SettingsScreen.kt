@@ -57,6 +57,9 @@ fun SettingsScreen(settings: SettingsRepository, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val source by settings.cameraSource.collectAsStateWithLifecycle(CameraSource.IN_APP)
     val hdr by settings.phoneHdr.collectAsStateWithLifecycle(true)
+    val ocr by settings.ocr.collectAsStateWithLifecycle(true)
+    val autoCapture by settings.autoCapture.collectAsStateWithLifecycle(true)
+    val batch by settings.batchMode.collectAsStateWithLifecycle(false)
     val highlight by settings.highlightColor.collectAsStateWithLifecycle(SettingsRepository.DEFAULT_HIGHLIGHT)
     val hdrAvailable by produceState<Boolean?>(null) { value = ScannerCamera.isPhoneHdrAvailable(context) }
     var pickColor by rememberSaveable { mutableStateOf(false) }
@@ -116,6 +119,20 @@ fun SettingsScreen(settings: SettingsRepository, onBack: () -> Unit) {
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             SectionTitle(stringResource(R.string.settings_scanning))
+            SwitchItem(
+                checked = autoCapture,
+                enabled = source == CameraSource.IN_APP,
+                icon = R.drawable.ic_document_scanner,
+                title = stringResource(R.string.auto_capture),
+                description = stringResource(if (source == CameraSource.IN_APP) R.string.auto_capture_desc else R.string.in_app_only),
+            ) { scope.launch { settings.setAutoCapture(it) } }
+            SwitchItem(
+                checked = batch,
+                enabled = source == CameraSource.IN_APP,
+                icon = R.drawable.ic_burst_mode,
+                title = stringResource(R.string.batch_mode),
+                description = stringResource(if (source == CameraSource.IN_APP) R.string.batch_mode_desc else R.string.in_app_only),
+            ) { scope.launch { settings.setBatchMode(it) } }
             ListItem(
                 modifier = Modifier.selectable(selected = false, onClick = { pickColor = true }),
                 leadingContent = { Icon(painterResource(R.drawable.ic_palette), null) },
@@ -128,6 +145,15 @@ fun SettingsScreen(settings: SettingsRepository, onBack: () -> Unit) {
                     )
                 },
             )
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionTitle(stringResource(R.string.settings_text))
+            SwitchItem(
+                checked = ocr,
+                icon = R.drawable.ic_notes,
+                title = stringResource(R.string.ocr),
+                description = stringResource(R.string.ocr_desc),
+            ) { scope.launch { settings.setOcr(it) } }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             ListItem(
@@ -153,6 +179,24 @@ private fun SectionTitle(text: String) {
         style = MaterialTheme.typography.titleSmall,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun SwitchItem(
+    checked: Boolean,
+    icon: Int,
+    title: String,
+    description: String,
+    enabled: Boolean = true,
+    onChange: (Boolean) -> Unit,
+) {
+    ListItem(
+        modifier = Modifier.toggleable(value = checked && enabled, enabled = enabled, role = Role.Switch, onValueChange = onChange),
+        leadingContent = { Icon(painterResource(icon), null) },
+        headlineContent = { Text(title) },
+        supportingContent = { Text(description) },
+        trailingContent = { Switch(checked = checked && enabled, onCheckedChange = null, enabled = enabled) },
     )
 }
 

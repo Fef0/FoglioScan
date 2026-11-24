@@ -74,6 +74,9 @@ fun FoglioApp(startInCamera: Boolean) {
     val cameraSource by settings.cameraSource.collectAsStateWithLifecycle(CameraSource.IN_APP)
     val phoneHdr by settings.phoneHdr.collectAsStateWithLifecycle(true)
     val pdfCompression by settings.pdfCompression.collectAsStateWithLifecycle(PdfCompression.BALANCED)
+    val ocrEnabled by settings.ocr.collectAsStateWithLifecycle(true)
+    val autoCapture by settings.autoCapture.collectAsStateWithLifecycle(true)
+    val batchMode by settings.batchMode.collectAsStateWithLifecycle(false)
 
     // --- Phone camera app (ACTION_IMAGE_CAPTURE) --------------------------------------------------
     // The target path survives process death: the camera app may run while we're killed.
@@ -167,7 +170,8 @@ fun FoglioApp(startInCamera: Boolean) {
                     newCaptureFile = session::newCaptureFile,
                     onCaptured = { file, quad ->
                         session.addCapture(file, quad)
-                        showReview(backStack)
+                        // Batch scanning keeps the camera open; the page stack opens review.
+                        if (!batchMode) showReview(backStack)
                     },
                     onImport = { uris ->
                         session.importImages(uris)
@@ -176,6 +180,9 @@ fun FoglioApp(startInCamera: Boolean) {
                     onHighlightColorChange = { c -> scope.launch { settings.setHighlightColor(c.toArgb()) } },
                     onDone = { showReview(backStack) },
                     onClose = { back() },
+                    autoCapture = autoCapture,
+                    onAutoCaptureChange = { on -> scope.launch { settings.setAutoCapture(on) } },
+                    batchMode = batchMode,
                 )
             }
             entry<ReviewKey> {
@@ -209,6 +216,8 @@ fun FoglioApp(startInCamera: Boolean) {
                             .onFailure { reviewSnackbar.showSnackbar(context.getString(R.string.save_failed)) }
                     },
                     onClose = { back() },
+                    ocrEnabled = ocrEnabled,
+                    documentText = { session.documentText() },
                 )
             }
             entry<SettingsKey> {

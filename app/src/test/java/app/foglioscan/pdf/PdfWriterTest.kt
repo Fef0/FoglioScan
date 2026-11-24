@@ -37,7 +37,7 @@ class PdfWriterTest {
         val startxref = Regex("startxref\n(\\d+)\n").find(pdf)!!.groupValues[1].toInt()
         assertTrue(pdf.startsWith("xref\n", startxref))
         val count = Regex("xref\n0 (\\d+)\n").find(pdf, startxref)!!.groupValues[1].toInt()
-        assertEquals(3 + 3 * 3 + 1, count)
+        assertEquals(3 + 3 * 3 + 1 + 1, count) // + shared font
         val entries = Regex("(\\d{10}) 00000 n \n").findAll(pdf, startxref).map { it.groupValues[1].toInt() }.toList()
         assertEquals(count - 1, entries.size)
         entries.forEachIndexed { i, offset ->
