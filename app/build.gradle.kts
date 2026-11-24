@@ -13,8 +13,8 @@ android {
         applicationId = "app.foglioscan"
         minSdk = 29
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -29,14 +29,27 @@ android {
         }
     }
 
+    // Release key from ~/.gradle/gradle.properties (foglioscan.keystore, .keystore.password,
+    // .key.alias), never from the repository. Without it, release builds fall back to the
+    // debug key so anyone can still build and side-load.
+    val releaseKeystore = providers.gradleProperty("foglioscan.keystore").orNull
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = providers.gradleProperty("foglioscan.keystore.password").get()
+                keyAlias = providers.gradleProperty("foglioscan.key.alias").getOrElse("foglioscan")
+                keyPassword = storePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so release builds can be side-loaded for testing.
-            // Replace with a real signing config before publishing.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

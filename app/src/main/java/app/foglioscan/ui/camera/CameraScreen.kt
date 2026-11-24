@@ -60,7 +60,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.camera.viewfinder.compose.MutableCoordinateTransformer
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
@@ -245,6 +248,9 @@ private fun ScannerViewfinder(
     }
 
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val transformer = remember { MutableCoordinateTransformer() }
+    var focusPoint by remember { mutableStateOf<Offset?>(null) }
+    var focusTick by remember { mutableStateOf(0) }
 
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         // Top bar
@@ -285,10 +291,23 @@ private fun ScannerViewfinder(
             Box(
                 Modifier
                     .aspectRatio(if (landscape) 4f / 3f else 3f / 4f)
-                    .clip(RoundedCornerShape(20.dp)),
+                    .clip(RoundedCornerShape(20.dp))
+                    .testTag("viewfinder")
+                    .pointerInput(Unit) {
+                        // Tap to focus on (and expose for) that part of the page.
+                        detectTapGestures { tap ->
+                            val surface = with(transformer) { tap.transform() }
+                            camera.focusAt(surface.x, surface.y)
+                            focusPoint = tap
+                            focusTick++
+                        }
+                    },
             ) {
-                surfaceRequest?.let { CameraXViewfinder(surfaceRequest = it, modifier = Modifier.fillMaxSize()) }
+                surfaceRequest?.let {
+                    CameraXViewfinder(surfaceRequest = it, coordinateTransformer = transformer, modifier = Modifier.fillMaxSize())
+                }
                 PageHighlight(quad, highlightColor, Modifier.fillMaxSize())
+                FocusRing(focusPoint, focusTick, Modifier.fillMaxSize())
                 Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = flashOverlay.value)))
                 if (capturing) {
                     CircularProgressIndicator(Modifier.align(Alignment.Center), color = highlightColor)
@@ -348,6 +367,25 @@ private fun PageHighlight(quad: Quad?, color: Color, modifier: Modifier) {
             drawCircle(Color.White.copy(alpha = alpha), radius = 7.dp.toPx(), center = it)
             drawCircle(color.copy(alpha = alpha), radius = 5.dp.toPx(), center = it)
         }
+    }
+}
+
+/** A ring that shrinks onto the tapped point and fades out. */
+@Composable
+private fun FocusRing(point: Offset?, tick: Int, modifier: Modifier) {
+    val anim = remember { Animatable(1f) }
+    LaunchedEffect(tick) {
+        if (point == null) return@LaunchedEffect
+        anim.snapTo(0f)
+        anim.animateTo(1f, tween(900))
+    }
+    Canvas(modifier) {
+        val p = point ?: return@Canvas
+        val t = anim.value
+        if (t >= 1f) return@Canvas
+        val radius = (44f - 12f * minOf(t * 3f, 1f)) * density
+        val alpha = if (t < 0.7f) 1f else (1f - t) / 0.3f
+        drawCircle(Color.White.copy(alpha = alpha), radius, p, style = Stroke(width = 2.dp.toPx()))
     }
 }
 

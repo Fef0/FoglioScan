@@ -16,7 +16,8 @@ Shutter ──► full-res photo (FoglioScan camera, optionally with the phone's
         ──► homography warp
         ──► enhancement: illumination flattening (shadow-aware) · white balance · levels · unsharp mask
         ──► JPEG on disk (any number of pages: nothing is kept in memory)
-        ──► OCR in the background (ML Kit Text Recognition v2, on-device)
+        ──► OCR in the background (ML Kit Text Recognition v2, on-device);
+            sideways / upside-down pages are turned upright from the text direction
 Save    ──► PDF streamed page by page, at the chosen quality:
             Maximum ≈300 dpi (pass-through) · Balanced ≈200 dpi · Small ≈150 dpi · Smallest ≈100 dpi
             black & white pages → 1-bit Flate (crisp text, a few dozen KB per page)
@@ -53,6 +54,10 @@ tools/        test-photo generator, model conversion helpers
 
 ## Build & test
 
+Release builds are signed with the key named in `~/.gradle/gradle.properties`
+(`foglioscan.keystore`, `foglioscan.keystore.password`, `foglioscan.key.alias`). The key never
+lives in the repository; without it, release builds fall back to the debug key.
+
 ```bash
 ./gradlew :app:assembleDebug
 ./gradlew :app:connectedDebugAndroidTest   # end-to-end pipeline test on a device/emulator
@@ -63,8 +68,9 @@ Tests:
 | Suite | What it checks |
 |---|---|
 | JVM unit tests (`./gradlew :app:testDebugUnitTest`) | PDF structure (xref offsets, stream lengths, encodings), text layer placement / rotation / encoding, 1-bit packing, paper-size snapping, quad geometry, true-aspect recovery under perspective, warp, enhancer (shadow removal, ink, colour), auto-capture timing |
-| `OcrTest` | OCR accuracy on a clean page and on pipeline output from perspective photos; text extracted back from the saved PDF at every quality level |
+| `OcrTest` | OCR accuracy on a clean page and on pipeline output from perspective photos; text extracted back from the saved PDF at every quality level; sideways / upside-down photos turned upright |
 | `ZoomGestureTest` | Real pinch / double-tap / pan / swipe input on the review screen |
+| `ReorderGestureTest` | Long-press-and-drag page reordering, accessibility move actions |
 | `LargeDocumentTest` | 40 full-resolution pages: no failures, flat memory, every compression level, size estimate, save |
 | `PipelineTest` | Detection accuracy, A4 aspect recovery, filters, PDF |
 | `SmartDocBenchmark` | Real-photo detection benchmark |

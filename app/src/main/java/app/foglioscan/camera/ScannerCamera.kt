@@ -3,6 +3,8 @@ package app.foglioscan.camera
 import android.content.Context
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -26,6 +28,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -143,6 +146,21 @@ class ScannerCamera(context: Context) {
         return base to false
     }
 
+    /**
+     * Focuses and meters on a point of the preview surface (in [SurfaceRequest.resolution]
+     * pixels); the camera returns to continuous autofocus after a few seconds.
+     */
+    fun focusAt(surfaceX: Float, surfaceY: Float) {
+        val request = _surfaceRequest.value ?: return
+        val control = camera?.cameraControl ?: return
+        val factory = SurfaceOrientedMeteringPointFactory(request.resolution.width.toFloat(), request.resolution.height.toFloat())
+        val action = FocusMeteringAction.Builder(
+            factory.createPoint(surfaceX, surfaceY),
+            FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE,
+        ).setAutoCancelDuration(FOCUS_HOLD_SECONDS, TimeUnit.SECONDS).build()
+        runCatching { control.startFocusAndMetering(action) }
+    }
+
     suspend fun capture(target: File): File = suspendCancellableCoroutine { cont ->
         imageCapture.takePicture(
             ImageCapture.OutputFileOptions.Builder(target).build(),
@@ -155,6 +173,8 @@ class ScannerCamera(context: Context) {
     }
 
     companion object {
+        private const val FOCUS_HOLD_SECONDS = 5L
+
         /** Whether the phone offers HDR/Auto processing usable together with live analysis. */
         suspend fun isPhoneHdrAvailable(context: Context): Boolean = runCatching {
             val app = context.applicationContext

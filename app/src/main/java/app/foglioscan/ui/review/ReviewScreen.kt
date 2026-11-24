@@ -69,6 +69,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -114,6 +125,7 @@ fun ReviewScreen(
     onClose: () -> Unit,
     ocrEnabled: Boolean = true,
     documentText: suspend () -> String = { "" },
+    onMove: (from: Int, to: Int) -> Unit = { _, _ -> },
 ) {
     val pager = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
@@ -226,7 +238,18 @@ fun ReviewScreen(
                 }
             }
             if (pages.size > 1) {
-                Thumbnails(pages, pager.currentPage) { scope.launch { pager.animateScrollToPage(it) } }
+                Thumbnails(
+                    pages, pager.currentPage,
+                    onClick = { scope.launch { pager.animateScrollToPage(it) } },
+                    onMove = { from, to ->
+                        onMove(from, to)
+                        // Keep showing the same page (moves are between neighbours).
+                        when (pager.currentPage) {
+                            from -> scope.launch { pager.scrollToPage(to) }
+                            to -> scope.launch { pager.scrollToPage(from) }
+                        }
+                    },
+                )
             }
         }
     }
@@ -348,24 +371,78 @@ private val PageFilter.icon
         PageFilter.ORIGINAL -> R.drawable.ic_photo_library
     }
 
+/**
+ * Page strip. Tap a page to show it; long-press and drag to reorder (with "move left / right"
+ * accessibility actions for screen readers).
+ */
 @Composable
-private fun Thumbnails(pages: List<PageState>, current: Int, onClick: (Int) -> Unit) {
+private fun Thumbnails(pages: List<PageState>, current: Int, onClick: (Int) -> Unit, onMove: (Int, Int) -> Unit) {
     val state = rememberLazyListState()
-    LaunchedEffect(current) { state.animateScrollToItem(current.coerceAtLeast(0)) }
+    val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val step = with(density) { (THUMB_WIDTH + THUMB_SPACING).toPx() }
+    var draggedId by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val currentPages by rememberUpdatedState(pages)
+    val currentOnMove by rememberUpdatedState(onMove)
+    val moveLeft = stringResource(R.string.move_left)
+    val moveRight = stringResource(R.string.move_right)
+
+    LaunchedEffect(current) { if (draggedId == null) state.animateScrollToItem(current.coerceAtLeast(0)) }
     LazyRow(
         state = state,
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(THUMB_SPACING),
+        modifier = Modifier.testTag("thumbnails"),
     ) {
         itemsIndexed(pages, key = { _, p -> p.spec.id }) { i, p ->
-            val border = if (i == current) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            val dragging = p.spec.id == draggedId
+            val border = when {
+                dragging -> BorderStroke(2.dp, MaterialTheme.colorScheme.tertiary)
+                i == current -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            }
             val thumb = rememberPageImage(p.previewFile, THUMB_SIDE)
             Box(
-                Modifier
-                    .size(width = 44.dp, height = 60.dp)
+                (if (dragging) Modifier.zIndex(1f) else Modifier.animateItem())
+                    .graphicsLayer {
+                        if (dragging) { translationX = dragOffset; scaleX = 1.12f; scaleY = 1.12f; shadowElevation = 8.dp.toPx() }
+                    }
+                    .size(width = THUMB_WIDTH, height = 60.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .border(border, RoundedCornerShape(6.dp))
                     .background(Color.White)
+                    .testTag("thumb-$i")
+                    .pointerInput(p.spec.id) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                draggedId = p.spec.id; dragOffset = 0f
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
+                            onDrag = { change, amount ->
+                                change.consume()
+                                dragOffset += amount.x
+                                val list = currentPages
+                                val idx = list.indexOfFirst { it.spec.id == draggedId }
+                                // Swap with the neighbour once the page is dragged past its middle.
+                                if (dragOffset > step / 2 && idx in 0 until list.lastIndex) {
+                                    currentOnMove(idx, idx + 1); dragOffset -= step
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                } else if (dragOffset < -step / 2 && idx > 0) {
+                                    currentOnMove(idx, idx - 1); dragOffset += step
+                                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                                }
+                            },
+                            onDragEnd = { draggedId = null; dragOffset = 0f },
+                            onDragCancel = { draggedId = null; dragOffset = 0f },
+                        )
+                    }
+                    .semantics {
+                        customActions = buildList {
+                            if (i > 0) add(CustomAccessibilityAction(moveLeft) { onMove(i, i - 1); true })
+                            if (i < pages.lastIndex) add(CustomAccessibilityAction(moveRight) { onMove(i, i + 1); true })
+                        }
+                    }
                     .clickable { onClick(i) },
                 contentAlignment = Alignment.Center,
             ) {
@@ -378,6 +455,9 @@ private fun Thumbnails(pages: List<PageState>, current: Int, onClick: (Int) -> U
         }
     }
 }
+
+private val THUMB_WIDTH = 44.dp
+private val THUMB_SPACING = 8.dp
 
 @Composable
 private fun SaveDialog(

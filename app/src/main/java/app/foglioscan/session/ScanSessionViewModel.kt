@@ -10,6 +10,7 @@ import app.foglioscan.data.DocumentRepository
 import app.foglioscan.data.SettingsRepository
 import app.foglioscan.imaging.PageFilter
 import app.foglioscan.imaging.PageProcessor
+import app.foglioscan.ocr.PageOrientation
 import app.foglioscan.ocr.PageText
 import app.foglioscan.ocr.TextRecognizer
 import app.foglioscan.pdf.ExportPage
@@ -47,6 +48,11 @@ data class PageSpec(
     val quad: Quad? = null,
     /** Outline seen in the live preview when the shutter was pressed. */
     val hint: Quad? = null,
+    /**
+     * Orientation already settled: checked from the recognized text, or set by the user.
+     * The page is never turned automatically after that.
+     */
+    val oriented: Boolean = false,
 )
 
 /**
@@ -86,6 +92,8 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
     /** OCR runs after rendering, one page at a time, without blocking the next rendering. */
     private val ocrGate = Mutex()
     private val ocrJobs = mutableMapOf<String, Job>()
+    /** Renderings OCR has run on (or failed on): never retried automatically. */
+    private val ocrAttempted = mutableSetOf<String>()
 
     private val _pages = MutableStateFlow<List<PageState>>(emptyList())
     val pages: StateFlow<List<PageState>> = _pages.asStateFlow()
@@ -134,7 +142,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
         updateSpec(id) { it.copy(filter = filter) }
     }
 
-    fun rotate(id: String) = updateSpec(id) { it.copy(rotation = (it.rotation + 90) % 360) }
+    fun rotate(id: String) = updateSpec(id) { it.copy(rotation = (it.rotation + 90) % 360, oriented = true) }
 
     fun setQuad(id: String, quad: Quad) = updateSpec(id) { it.copy(quad = quad) }
 
@@ -173,14 +181,21 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
      * yet (e.g. OCR was just turned on).
      */
     suspend fun awaitRecognized() {
-        awaitRendered()
-        withContext(Dispatchers.Main.immediate) {
-            _pages.value.forEach { p ->
-                val out = p.output
-                if (out != null && p.text == null && p.spec.id !in ocrJobs) recognize(p.spec.id, out, p.widthPx, p.heightPx, force = true)
+        while (true) {
+            awaitRendered()
+            // Reading a page can turn it upright, which renders it again: loop until settled.
+            val pending = withContext(Dispatchers.Main.immediate) {
+                _pages.value.forEach { p ->
+                    val out = p.output
+                    if (out != null && p.text == null && p.spec.id !in ocrJobs && out.path !in ocrAttempted) {
+                        recognize(p.spec.id, out, p.widthPx, p.heightPx, force = true)
+                    }
+                }
+                ocrJobs.values.toList() + jobs.values.toList()
             }
-            ocrJobs.values.toList()
-        }.joinAll()
+            if (pending.isEmpty()) return
+            pending.joinAll()
+        }
     }
 
     /** The whole document's recognized text, pages separated by a blank line. */
@@ -235,6 +250,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
         jobs.clear()
         ocrJobs.values.forEach { it.cancel() }
         ocrJobs.clear()
+        ocrAttempted.clear()
         _pages.value = emptyList()
         persist()
         PageImages.clear()
@@ -323,6 +339,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
         ocrJobs.remove(id)?.cancel()
         val job = viewModelScope.launch {
             if (!force && !settings.ocr.first()) return@launch
+            ocrAttempted += file.path
             val text = ocrGate.withLock {
                 try {
                     TextRecognizer.recognize(file, widthPx, heightPx)
@@ -333,7 +350,21 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
                     null
                 }
             } ?: return@launch
-            _pages.update { list -> list.map { if (it.spec.id == id && it.output == file) it.copy(text = text) else it } }
+            val page = _pages.value.firstOrNull { it.spec.id == id && it.output == file } ?: return@launch
+            if (!page.spec.oriented) {
+                // First reading of this page: turn it upright if the text says it's sideways or
+                // upside down (re-renders, then reads again).
+                val fix = PageOrientation.correction(text)
+                if (fix != 0) {
+                    Log.i(TAG, "Page $id: text is rotated, turning it by $fix°")
+                    updateSpec(id) { it.copy(rotation = (it.rotation + fix) % 360, oriented = true) }
+                    return@launch
+                }
+            }
+            _pages.update { list ->
+                list.map { if (it.spec.id == id && it.output == file) it.copy(spec = it.spec.copy(oriented = true), text = text) else it }
+            }
+            persist()
         }
         ocrJobs[id] = job
         job.invokeOnCompletion { if (ocrJobs[id] === job) ocrJobs.remove(id) }

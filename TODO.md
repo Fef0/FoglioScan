@@ -11,7 +11,7 @@ WinAnsi, so copy & paste works in every viewer); review has "Recognized text" wi
       — needs an embedded font subset + `/ToUnicode` CMap instead of WinAnsi Helvetica.
 - [ ] Store recognized text alongside the PDF (XMP metadata or a sidecar) for in-app search.
 - [ ] In-app search across saved documents.
-- [ ] Use OCR line orientation to auto-rotate pages scanned upside down / sideways.
+- [x] Use OCR line orientation to auto-rotate pages scanned upside down / sideways.
 
 ## 2. Best-in-class ML upgrades
 
@@ -45,14 +45,14 @@ can be swapped for a learned model without touching the UI.
 ## 3. Capture UX
 
 - [x] Auto-capture when the outline is stable for ~1 s (AUTO toggle in the camera + setting).
-- [ ] Tap-to-focus / exposure lock on the viewfinder.
+- [x] Tap-to-focus (focus + exposure metering on the tapped point).
 - [ ] Glare detection hint ("Tilt to avoid reflections").
 - [x] Batch mode (keep shooting without visiting review between pages).
 - [ ] Book mode: split a two-page spread into two pages.
 
 ## 4. Documents
 
-- [ ] Reorder pages by drag & drop in review (`ScanSessionViewModel.move` already exists).
+- [x] Reorder pages by drag & drop in review (long-press a thumbnail; accessibility actions too).
 - [ ] Re-open a saved PDF to append pages.
 - [ ] In-app PDF viewer (`androidx.pdf`) instead of relying on an external app.
 - [ ] Page size setting (Auto / A4 / Letter / Original).
@@ -65,4 +65,4 @@ can be swapped for a learned model without touching the UI.
 - [x] JVM unit tests for the PDF writer / text layer, geometry, enhancer, auto-capture.
 - [x] Baseline Profiles for faster startup.
 - [ ] CI (build + instrumented tests on a Gradle Managed Device).
-- [ ] Real signing config for release builds (test APKs use the debug key).
+- [x] Real signing config for release builds (key outside the repo, see README).

@@ -101,7 +101,7 @@
     <string name="text_copied">Text copied</string>
     <string name="settings_text">Text</string>
     <string name="ocr">Searchable PDF</string>
-    <string name="ocr_desc">Recognizes the text of every page, on the phone. Saved PDFs can be searched and their text copied.</string>
+    <string name="ocr_desc">Recognizes the text of every page, on the phone. Saved PDFs can be searched and their text copied, and pages scanned sideways or upside down are turned upright.</string>
 
     <!-- Capture -->
     <string name="auto_capture">Auto-capture</string>
@@ -114,4 +114,6 @@
     <string name="hint_hold_steady">Hold steady…</string>
     <string name="hint_next_page">Captured · show the next page</string>
     <string name="in_app_only">Only with the FoglioScan camera.</string>
+    <string name="move_left">Move left</string>
+    <string name="move_right">Move right</string>
 </resources>

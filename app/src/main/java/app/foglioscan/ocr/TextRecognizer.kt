@@ -48,7 +48,7 @@ object TextRecognizer {
                     corners[2 * i] = pts[i].x * sx
                     corners[2 * i + 1] = pts[i].y * sy
                 }
-                lines += TextLine(text, b, corners)
+                lines += TextLine(text, b, corners, line.angle)
             }
         }
         return PageText(widthPx, heightPx, lines)

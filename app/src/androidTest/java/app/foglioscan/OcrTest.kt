@@ -1,6 +1,13 @@
 package app.foglioscan
 
+import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.Matrix
+import android.net.Uri
+import androidx.lifecycle.SavedStateHandle
+import app.foglioscan.data.SettingsRepository
+import app.foglioscan.ocr.PageOrientation
+import app.foglioscan.session.ScanSessionViewModel
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -95,6 +102,36 @@ class OcrTest {
             val expected = text.lines.map { it.text.split(' ').first() }.filter { it.length >= 4 }.distinct()
             assertPdfContainsText(r.file, r.widthPx, r.heightPx, text, expected)
         }
+    }
+
+    @Test
+    fun sidewaysAndUpsideDownPagesAreTurnedUpright() {
+        runBlocking { SettingsRepository(app.applicationContext as Application).setOcr(true) }
+        lateinit var vm: ScanSessionViewModel
+        instr.runOnMainSync { vm = ScanSessionViewModel(app.applicationContext as Application, SavedStateHandle()); vm.discard() }
+        val photo = PageProcessor.decode(File(app.cacheDir, "upright-src.jpg").also { f ->
+            instr.context.assets.open("upright.jpg").use { i -> f.outputStream().use { i.copyTo(it) } }
+        }, 4096)
+        val angles = listOf(0, 90, 180, 270)
+        val uris = angles.map { deg ->
+            val b = if (deg == 0) photo else Bitmap.createBitmap(photo, 0, 0, photo.width, photo.height, Matrix().apply { postRotate(deg.toFloat()) }, true)
+            val f = File(app.cacheDir, "rot-$deg.jpg")
+            f.outputStream().use { b.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            Uri.fromFile(f)
+        }
+        instr.runOnMainSync { vm.importImages(uris) }
+        // Wait for the pages to arrive, then for every page to be read (and turned, if needed).
+        val t0 = System.currentTimeMillis()
+        while (vm.pages.value.size < angles.size) { Thread.sleep(200); check(System.currentTimeMillis() - t0 < 60_000) }
+        runBlocking { vm.awaitRecognized() }
+        vm.pages.value.forEachIndexed { i, p ->
+            val text = p.text!!
+            Log.i(TAG, "photo rotated ${angles[i]}° → page rotation ${p.spec.rotation}°, first line '${text.lines.firstOrNull()?.text}'")
+            assertTrue("page ${angles[i]}: text still rotated", PageOrientation.correction(text) == 0 && text.lines.size > 10)
+            assertTrue("page ${angles[i]}: ${text.plain.take(80)}", text.plain.startsWith("Invoice"))
+            assertTrue(p.spec.oriented)
+        }
+        instr.runOnMainSync { vm.discard() }
     }
 
     /** Writes a one-page PDF at every compression level and extracts its text with the platform engine. */

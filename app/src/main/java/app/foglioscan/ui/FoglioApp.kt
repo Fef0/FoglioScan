@@ -218,6 +218,7 @@ fun FoglioApp(startInCamera: Boolean) {
                     onClose = { back() },
                     ocrEnabled = ocrEnabled,
                     documentText = { session.documentText() },
+                    onMove = session::move,
                 )
             }
             entry<SettingsKey> {

@@ -96,7 +96,7 @@
     <string name="text_copied">Testo copiato</string>
     <string name="settings_text">Testo</string>
     <string name="ocr">PDF ricercabile</string>
-    <string name="ocr_desc">Riconosce il testo di ogni pagina, direttamente sul telefono. Nei PDF salvati si può cercare e copiare il testo.</string>
+    <string name="ocr_desc">Riconosce il testo di ogni pagina, direttamente sul telefono. Nei PDF salvati si può cercare e copiare il testo, e le pagine acquisite di lato o capovolte vengono raddrizzate.</string>
 
     <!-- Capture -->
     <string name="auto_capture">Scatto automatico</string>
@@ -109,4 +109,6 @@
     <string name="hint_hold_steady">Tieni fermo…</string>
     <string name="hint_next_page">Acquisita · inquadra la pagina successiva</string>
     <string name="in_app_only">Solo con la fotocamera di FoglioScan.</string>
+    <string name="move_left">Sposta a sinistra</string>
+    <string name="move_right">Sposta a destra</string>
 </resources>

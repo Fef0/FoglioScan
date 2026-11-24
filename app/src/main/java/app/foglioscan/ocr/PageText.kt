@@ -23,7 +23,8 @@ class PageText(val widthPx: Int, val heightPx: Int, val lines: List<TextLine>) {
 /**
  * One line of text and its (possibly rotated) box in image pixels: top-left, top-right,
  * bottom-right, bottom-left. The baseline runs from bottom-left to bottom-right.
+ * [angle] is the text's rotation in degrees, clockwise (90 = reads top to bottom).
  */
-class TextLine(val text: String, val block: Int, val corners: FloatArray) {
+class TextLine(val text: String, val block: Int, val corners: FloatArray, val angle: Float = 0f) {
     init { require(corners.size == 8) }
 }
