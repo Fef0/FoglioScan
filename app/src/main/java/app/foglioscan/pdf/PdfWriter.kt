@@ -59,7 +59,7 @@ sealed interface PdfImage {
  *
  * Output is PDF/A-2u (ISO 19005-2, archival with Unicode text): XMP metadata matching the document
  * information, an sRGB output intent, and no unembedded fonts except the invisible text layer's,
- * which the standard exempts (text rendering mode 3). Check samples with veraPDF (see README).
+ * which the standard exempts (text rendering mode 3). Validated with veraPDF (see README).
  */
 object PdfWriter {
 

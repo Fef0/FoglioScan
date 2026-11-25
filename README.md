@@ -141,7 +141,8 @@ rendering mode 3). `PdfaSamplesTest` writes samples to `app/build/pdfa` for vali
 java -cp "verapdf/*" org.verapdf.apps.GreenfieldCliWrapper --flavour 2u app/build/pdfa/*.pdf
 ```
 
-(veraPDF: `org.verapdf.apps:greenfield-apps` from Maven Central.)
+(veraPDF: `org.verapdf.apps:greenfield-apps` from Maven Central.) All samples, and a PDF saved by the
+release build on a device, pass PDF/A-2u (veraPDF 1.28.1); a copy without the output intent fails, as it should.
 
 ## Curved pages (UVDoc)
 

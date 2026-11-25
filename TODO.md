@@ -62,7 +62,7 @@ can be swapped for a learned model without touching the UI.
 - [x] CCITT G4 for B&W pages (own codec, verified against libtiff and pdfium); 1.4× smaller than
       Flate on the test page.
 - [ ] JBIG2 (generic region) for B&W pages: smaller again than G4.
-- [x] PDF/A-2u output (XMP, sRGB output intent).
+- [x] PDF/A-2u output (XMP, sRGB output intent), validated with veraPDF.
 - [ ] Validate saved PDFs with veraPDF in CI.
 
 ## 5. Engineering
