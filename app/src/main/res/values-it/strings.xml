@@ -118,4 +118,6 @@
     <string name="replace_original_on">Il documento salvato viene aggiornato con le nuove pagine.</string>
     <string name="replace_original_off">Salvato come nuovo documento; l\'originale resta invariato.</string>
     <string name="discard_to_open">Le pagine acquisite andranno perse e “%1$s” verrà aperto per aggiungere pagine.</string>
+    <string name="flatten_curved">Raddrizza le pagine curve</string>
+    <string name="flatten_curved_desc">Le pagine dei libri e i fogli arrotolati o piegati diventano piatti, con le righe dritte. Vale per le nuove scansioni.</string>
 </resources>

@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import app.foglioscan.data.DocumentRepository
 import app.foglioscan.data.SettingsRepository
 import app.foglioscan.imaging.PageFilter
+import app.foglioscan.imaging.PageDewarper
 import app.foglioscan.imaging.PageProcessor
 import app.foglioscan.ocr.PageOrientation
 import app.foglioscan.ocr.PageText
@@ -57,6 +58,11 @@ data class PageSpec(
     val oriented: Boolean = false,
     /** A finished page taken back from a saved PDF: used as is until the user changes it. */
     val fromPdf: Boolean = false,
+    /**
+     * Flatten as a curved page: null until decided from the photo, false once the user sets the
+     * corners by hand (their outline is then used exactly).
+     */
+    val flatten: Boolean? = null,
 )
 
 /** The saved document being extended, if the session started from one. */
@@ -89,7 +95,7 @@ data class PageState(
 class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle) : AndroidViewModel(app) {
 
     private val sessionDir = File(app.cacheDir, "session").apply { mkdirs() }
-    private val processor = PageProcessor(DocumentLocator.get(app))
+    private val processor = PageProcessor(DocumentLocator.get(app)) { PageDewarper.get(app) }
     private val documents = DocumentRepository.get(app)
     private val settings = SettingsRepository(app)
 
@@ -238,7 +244,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
 
     fun rotate(id: String) = updateSpec(id) { it.copy(rotation = (it.rotation + 90) % 360, oriented = true) }
 
-    fun setQuad(id: String, quad: Quad) = updateSpec(id) { it.copy(quad = quad) }
+    fun setQuad(id: String, quad: Quad) = updateSpec(id) { it.copy(quad = quad, flatten = false) }
 
     /** Renders a page again (after a failure). */
     fun retry(id: String) = updateSpec(id) { it }
@@ -398,12 +404,13 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
             val stamp = System.nanoTime()
             val out = File(sessionDir, "out-${spec.id}-$stamp.jpg")
             val preview = File(sessionDir, "prev-${spec.id}-$stamp.jpg")
+            val flatten = if (settings.flattenCurved.first()) spec.flatten else false
             val result = renderGate.withLock {
                 runCatching {
                     if (spec.fromPdf && spec.filter == PageFilter.ORIGINAL && spec.rotation == 0 && spec.sourcePath.endsWith(".jpg")) {
                         processor.passThrough(File(spec.sourcePath), out, preview)
                     } else {
-                        processor.process(File(spec.sourcePath), out, preview, spec.filter, spec.rotation, spec.quad, spec.hint)
+                        processor.process(File(spec.sourcePath), out, preview, spec.filter, spec.rotation, spec.quad, spec.hint, flatten)
                     }
                 }.recoverCatching { t ->
                     // Low memory: free what we can and try once more.
@@ -411,7 +418,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
                     Log.w(TAG, "Out of memory rendering ${spec.id}, retrying", t)
                     PageImages.clear()
                     System.gc()
-                    processor.process(File(spec.sourcePath), out, preview, spec.filter, spec.rotation, spec.quad, spec.hint)
+                    processor.process(File(spec.sourcePath), out, preview, spec.filter, spec.rotation, spec.quad, spec.hint, flatten)
                 }
             }
             result.onSuccess { r ->
@@ -421,7 +428,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
                         if (p.spec.id != spec.id) p else {
                             old = p
                             p.copy(
-                                spec = p.spec.copy(quad = p.spec.quad ?: r.quad),
+                                spec = p.spec.copy(quad = p.spec.quad ?: r.quad, flatten = p.spec.flatten ?: r.flattened.takeIf { flatten == null }),
                                 previewFile = r.previewFile,
                                 output = r.file, widthPx = r.widthPx, heightPx = r.heightPx,
                                 processing = false, failed = false, text = null,

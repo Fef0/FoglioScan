@@ -36,6 +36,15 @@ object PerspectiveWarp {
         return max(1, w.roundToInt()) to max(1, h.roundToInt())
     }
 
+    /**
+     * width/height of the physical rectangle whose image is [quadPx] (unsnapped), or null when
+     * the geometry is degenerate.
+     */
+    internal fun planeAspect(quadPx: Quad, imgW: Int, imgH: Int, focalPx: Double? = null): Double? {
+        val prior = focalPx ?: (TYPICAL_FOCAL * max(imgW, imgH))
+        return rectAspect(quadPx, imgW / 2.0, imgH / 2.0, max(imgW, imgH).toDouble(), prior)
+    }
+
     /** width/height of the physical rectangle, or null when the geometry is degenerate. */
     private fun rectAspect(q: Quad, u0: Double, v0: Double, longSide: Double, prior: Double): Double? {
         // Homogeneous corners relative to the principal point. Zhang's labelling:
@@ -65,7 +74,7 @@ object PerspectiveWarp {
         return aspect.takeIf { it.isFinite() && it in 0.1..10.0 }
     }
 
-    private fun snapToPaper(aspect: Double): Double {
+    internal fun snapToPaper(aspect: Double): Double {
         val portrait = aspect < 1
         val r = if (portrait) 1 / aspect else aspect
         val snapped = when {
@@ -125,6 +134,15 @@ object PerspectiveWarp {
         return out
     }
 
+    /** Bilinear sample of ARGB [src] at (sx, sy), which must lie inside the image. */
+    internal fun sample(src: IntArray, srcW: Int, srcH: Int, sx: Float, sy: Float): Int {
+        val x0 = sx.toInt(); val y0 = sy.toInt()
+        val x1 = if (x0 < srcW - 1) x0 + 1 else x0
+        val y1 = if (y0 < srcH - 1) y0 + 1 else y0
+        val fx = ((sx - x0) * 256).toInt(); val fy = ((sy - y0) * 256).toInt()
+        return bilerp(src[y0 * srcW + x0], src[y0 * srcW + x1], src[y1 * srcW + x0], src[y1 * srcW + x1], fx, fy)
+    }
+
     private fun bilerp(p00: Int, p10: Int, p01: Int, p11: Int, fx: Int, fy: Int): Int {
         val ifx = 256 - fx; val ify = 256 - fy
         fun ch(shift: Int): Int {
@@ -139,7 +157,7 @@ object PerspectiveWarp {
      * Homography H mapping output (u, v) -> source (x, y):
      * x = (h0 u + h1 v + h2) / (h6 u + h7 v + 1), y = (h3 u + h4 v + h5) / (h6 u + h7 v + 1)
      */
-    private fun homography(outW: Int, outH: Int, q: Quad): DoubleArray {
+    internal fun homography(outW: Int, outH: Int, q: Quad): DoubleArray {
         val uv = arrayOf(
             doubleArrayOf(0.0, 0.0), doubleArrayOf(outW - 1.0, 0.0),
             doubleArrayOf(outW - 1.0, outH - 1.0), doubleArrayOf(0.0, outH - 1.0),

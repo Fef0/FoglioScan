@@ -11,6 +11,40 @@
 - Modification: BiFPN fusion `Einsum` ops were rewritten as equivalent `Slice/Mul/Sum` ops
   (`tools/models/rewrite_einsum.py`) so the model converts correctly to TFLite.
 
+## UVDoc (curved-page dewarping model)
+
+- Source: https://github.com/tanguymagne/UVDoc (commit 4c9b82b), code and weights
+  (`model/best_model.pkl`) under the MIT License below. F. Verhoeven, T. Magne,
+  O. Sorkine-Hornung, "UVDoc: Neural Grid-based Document Unwarping", SIGGRAPH Asia 2023,
+  https://doi.org/10.1145/3610548.3618174
+- Modifications: exported to ONNX with only the 2D grid branch, reflect padding written as index
+  lookups (`tools/models/export_uvdoc.py`), converted to TFLite with float16 weights
+  (`app/src/main/assets/models/uvdoc_fp16.tflite`).
+
+```
+MIT License
+
+Copyright (c) 2023 Tanguy MAGNE
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## SmartDoc 2015 Challenge 1 (test data only, not shipped)
 
 Real-photo benchmark frames, CC BY 4.0. J.-C. Burie et al., "ICDAR2015 Competition on Smartphone

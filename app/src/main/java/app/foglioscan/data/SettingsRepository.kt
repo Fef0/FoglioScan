@@ -54,6 +54,10 @@ class SettingsRepository(context: Context) {
     /** Keep the camera open after each shot, to scan many pages in a row. */
     val batchMode: Flow<Boolean> = store.data.map { it[BATCH] ?: false }
 
+    /** Flatten curved pages (books, curled sheets) with the dewarping model. */
+    val flattenCurved: Flow<Boolean> = store.data.map { it[FLATTEN] ?: true }
+    suspend fun setFlattenCurved(enabled: Boolean) = store.edit { it[FLATTEN] = enabled }
+
     suspend fun setOcr(enabled: Boolean) = store.edit { it[OCR] = enabled }
     suspend fun setAutoCapture(enabled: Boolean) = store.edit { it[AUTO_CAPTURE] = enabled }
     suspend fun setBatchMode(enabled: Boolean) = store.edit { it[BATCH] = enabled }
@@ -73,5 +77,6 @@ class SettingsRepository(context: Context) {
         private val OCR = booleanPreferencesKey("ocr")
         private val AUTO_CAPTURE = booleanPreferencesKey("auto_capture")
         private val BATCH = booleanPreferencesKey("batch_mode")
+        private val FLATTEN = booleanPreferencesKey("flatten_curved")
     }
 }

@@ -18,11 +18,11 @@ WinAnsi, so copy & paste works in every viewer); review has "Recognized text" wi
 The pipeline is built behind small interfaces (`DocumentLocator`, `PageProcessor`) so each stage
 can be swapped for a learned model without touching the UI.
 
-- [ ] **Curved-page dewarping — UVDoc** (MIT, SIGGRAPH Asia 2023): predicts a 45×31 sampling grid
-      from a 712×488 crop; apply it with bilinear sampling in Kotlin. Use it automatically when the
-      grid deviates from a pure homography (page is curved: books, folded sheets).
-      *Status*: export script ready (`tools/models/export_uvdoc.py`, loads the checkpoint with
-      `weights_only=True`); then the same ONNX → TFLite path as DocAligner (see README).
+- [x] **Curved-page dewarping — UVDoc** (MIT, SIGGRAPH Asia 2023), float16 on LiteRT; used when
+      the grid bends and the photo's edges confirm the curved outline (see README).
+- [ ] Test UVDoc on real photos of books / curled pages (only synthetic curved pages so far), and
+      on a phone GPU (the emulator runs it on CPU, ≈350 ms).
+- [ ] Two-page book spreads: split at the spine, then flatten each page.
 - [ ] **Learned restoration — DocRes** (MIT, CVPR 2024): deshadowing / appearance enhancement /
       deblurring in one model. Heavy (transformer); evaluate running at reduced resolution and
       applying its output as a shading map to the full-resolution page. Offer as "Max quality".
@@ -38,8 +38,8 @@ can be swapped for a learned model without touching the UI.
       APK stays small and models can be updated independently. LiteRT already ships
       `AiPackModelProvider`.
 - [ ] **NPU acceleration**: LiteRT `Accelerator.NPU` with Qualcomm/MediaTek providers; benchmark vs GPU.
-- [ ] Quantize models (fp16 weights / int8) once a conversion path preserves accuracy; the
-      `onnx2tf` fp16 output of this version uses fp16 activations that don't run on CPU.
+- [ ] Quantize DocAligner (fp16 weights via `-tb tf_converter`, as done for UVDoc: the default
+      `flatbuffer_direct` fp16 output uses fp16 activations that don't run on CPU).
 
 ## 3. Capture UX
 

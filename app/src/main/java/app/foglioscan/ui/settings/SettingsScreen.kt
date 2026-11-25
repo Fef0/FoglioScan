@@ -60,6 +60,7 @@ fun SettingsScreen(settings: SettingsRepository, onBack: () -> Unit) {
     val ocr by settings.ocr.collectAsStateWithLifecycle(true)
     val autoCapture by settings.autoCapture.collectAsStateWithLifecycle(true)
     val batch by settings.batchMode.collectAsStateWithLifecycle(false)
+    val flatten by settings.flattenCurved.collectAsStateWithLifecycle(true)
     val highlight by settings.highlightColor.collectAsStateWithLifecycle(SettingsRepository.DEFAULT_HIGHLIGHT)
     val hdrAvailable by produceState<Boolean?>(null) { value = ScannerCamera.isPhoneHdrAvailable(context) }
     var pickColor by rememberSaveable { mutableStateOf(false) }
@@ -133,6 +134,12 @@ fun SettingsScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 title = stringResource(R.string.batch_mode),
                 description = stringResource(if (source == CameraSource.IN_APP) R.string.batch_mode_desc else R.string.in_app_only),
             ) { scope.launch { settings.setBatchMode(it) } }
+            SwitchItem(
+                checked = flatten,
+                icon = R.drawable.ic_menu_book,
+                title = stringResource(R.string.flatten_curved),
+                description = stringResource(R.string.flatten_curved_desc),
+            ) { scope.launch { settings.setFlattenCurved(it) } }
             ListItem(
                 modifier = Modifier.selectable(selected = false, onClick = { pickColor = true }),
                 leadingContent = { Icon(painterResource(R.drawable.ic_palette), null) },

@@ -10,3 +10,5 @@ build/
 .cxx/
 /dist/
 /testdata/
+
+.claude/settings.local.json

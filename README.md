@@ -12,8 +12,13 @@ CameraX analysis frame ──► DocAligner (LiteRT, GPU) ──► smoothed out
 Shutter ──► full-res photo (FoglioScan camera, optionally with the phone's HDR extension,
             or the phone's own camera app — Settings)
         ──► DocAligner on the photo (median corner error 0.31% on real photos)
-        ──► true page aspect from projective geometry (Zhang & He), snap to A4 / Letter
-        ──► homography warp
+        ──► curved page? UVDoc (LiteRT) predicts a 45×31 grid over the page; it is used when
+            the grid bends and the photo's edges follow its curved outline rather than the
+            straight one between the corners (books, curled or folded sheets)
+        ──► flat page: true aspect from projective geometry (Zhang & He) + homography warp
+            curved page: same aspect method on the grid's best-fit plane + arc length,
+                         smooth (Catmull-Rom) grid warp
+            both snapped to A4 / Letter
         ──► enhancement: illumination flattening (shadow-aware) · white balance · levels · unsharp mask
         ──► JPEG on disk (any number of pages: nothing is kept in memory)
         ──► OCR in the background (ML Kit Text Recognition v2, on-device);
@@ -30,6 +35,7 @@ Save    ──► PDF streamed page by page, at the chosen quality:
 | Camera | CameraX 1.6 + `camera-compose` viewfinder |
 | ML | LiteRT 2.3 `CompiledModel` API, GPU accelerator with CPU fallback |
 | Detection | DocAligner LCNet-100 heatmap model; classic Canny/Hough fallback |
+| Dewarping | UVDoc (SIGGRAPH Asia 2023) grid model, float16 weights |
 | OCR | ML Kit Text Recognition v2, Latin model bundled (offline, no Play services needed) |
 | Imaging | Pure Kotlin, multithreaded (no OpenCV / native image libs) |
 | Storage | MediaStore → `Documents/FoglioScan` (no storage permission), DataStore for settings |
@@ -43,7 +49,8 @@ Min SDK 29 (Android 10), target/compile SDK 37. Languages: English, Italian.
 app/src/main/java/app/foglioscan/
   camera/     ScannerCamera – preview, capture, live analysis + temporal smoothing
   vision/     NeuralDocumentDetector (LiteRT), DocumentDetector (classic fallback), DocumentLocator, Quad
-  imaging/    PageProcessor (pipeline), PerspectiveWarp (homography + aspect recovery), PageEnhancer
+  imaging/    PageProcessor (pipeline), PerspectiveWarp (homography + aspect recovery),
+              PageDewarper (UVDoc) + GridWarp + EdgeEvidence (curved pages), PageEnhancer
   ocr/        TextRecognizer (ML Kit), PageText
   pdf/        PdfWriter, PdfExporter (compression levels), PdfTextLayer (searchable text)
   session/    ScanSessionViewModel – multipage document, survives process death
@@ -67,13 +74,14 @@ Tests:
 
 | Suite | What it checks |
 |---|---|
-| JVM unit tests (`./gradlew :app:testDebugUnitTest`) | PDF structure (xref offsets, stream lengths, encodings), text layer placement / rotation / encoding, 1-bit packing, paper-size snapping, quad geometry, true-aspect recovery under perspective, warp, enhancer (shadow removal, ink, colour), auto-capture timing |
+| JVM unit tests (`./gradlew :app:testDebugUnitTest`) | PDF structure (xref offsets, stream lengths, encodings), text layer placement / rotation / encoding, 1-bit packing, paper-size snapping, quad geometry, true-aspect recovery under perspective, warp, curved-page grid (bending, size, smooth warp, edge evidence), enhancer (shadow removal, ink, colour), auto-capture timing |
 | `OcrTest` | OCR accuracy on a clean page and on pipeline output from perspective photos; text extracted back from the saved PDF at every quality level; sideways / upside-down photos turned upright |
 | `ZoomGestureTest` | Real pinch / double-tap / pan / swipe input on the review screen |
 | `ReopenDocumentTest` | Reopening a saved PDF: pages reused byte for byte, replace vs copy, other apps' PDFs rasterized and read |
 | `ReorderGestureTest` | Long-press-and-drag page reordering, accessibility move actions |
 | `LargeDocumentTest` | 40 full-resolution pages: no failures, flat memory, every compression level, size estimate, save |
 | `PipelineTest` | Detection accuracy, A4 aspect recovery, filters, PDF |
+| `DewarpTest` | Curved pages (synthetic, exact ground truth) flattened better than the corner warp, A4 proportions; flat photos left to the corner warp |
 | `SmartDocBenchmark` | Real-photo detection benchmark |
 
 `PipelineTest` runs the real pipeline on generated photos (perspective, colour cast, lighting
@@ -109,5 +117,34 @@ cp out/lcnet100_fixed_float32.tflite app/src/main/assets/models/docaligner_lcnet
 ```
 
 The Einsum rewrite is required: the stock conversion silently produces wrong heatmaps.
+
+## Curved pages (UVDoc)
+
+```bash
+git clone https://github.com/tanguymagne/UVDoc
+python tools/models/export_uvdoc.py UVDoc uvdoc.onnx photo.jpg   # checks ONNX against PyTorch
+onnx2tf -i uvdoc.onnx -o out -tb tf_converter
+cp out/uvdoc_float16.tflite app/src/main/assets/models/uvdoc_fp16.tflite
+python tools/testdata/make_curved_pages.py app/src/androidTest/assets   # synthetic test pages
+```
+
+The export rewrites the reflect-padded convolutions with index lookups (`onnx2tf` maps ONNX
+`Pad(reflect)` to the wrong axes) and keeps only the 2D grid branch.
+
+Synthetic curved pages (book, curl, wave, gentle bend; exact page position for every pixel), mean
+error as a fraction of the page width, output outside the page penalized:
+
+| Page | Corner warp | UVDoc |
+|---|---|---|
+| Book | 3.44% | **1.51%** |
+| Curl | 4.90% | **2.29%** |
+| Wave | 2.20% | **0.96%** |
+| Gentle bend | 1.46% | **1.27%** |
+
+On flat pages UVDoc is *less* precise than the corners (SmartDoc: median error 1.4% vs 0.4%), and
+its grid bends as much on many flat pages as on curved ones, so bending alone can't decide. The
+photo decides: the edge strength along UVDoc's curved outline over that along the straight
+outline is 1.00 (median) on flat SmartDoc frames and 1.4–1.7 on curved pages; pages above 1.3
+are flattened (≈2% of flat frames, mostly ones where the corners were wrong anyway).
 
 See [TODO.md](TODO.md) for the roadmap (OCR, curved-page dewarping, learned restoration).
