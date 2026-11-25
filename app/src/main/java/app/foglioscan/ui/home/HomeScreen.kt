@@ -38,8 +38,22 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -65,6 +79,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.foglioscan.R
 import app.foglioscan.data.DocumentRepository
 import app.foglioscan.data.SavedDocument
+import app.foglioscan.data.SearchMatch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,6 +92,10 @@ fun HomeScreen(
     onAddPages: (SavedDocument) -> Unit = {},
 ) {
     val docs by viewModel.documents.collectAsStateWithLifecycle()
+    val query by viewModel.query.collectAsStateWithLifecycle()
+    val results by viewModel.results.collectAsStateWithLifecycle()
+    var searching by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = searching) { searching = false; viewModel.setQuery("") }
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
         onPauseOrDispose { }
@@ -88,13 +107,26 @@ fun HomeScreen(
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = { Text(stringResource(R.string.app_name)) },
-                actions = {
-                    IconButton(onClick = onSettings) { Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings)) }
-                },
-                scrollBehavior = scroll,
-            )
+            if (searching) {
+                SearchTopBar(
+                    query = query,
+                    onQuery = viewModel::setQuery,
+                    onClose = { searching = false; viewModel.setQuery("") },
+                )
+            } else {
+                LargeTopAppBar(
+                    title = { Text(stringResource(R.string.app_name)) },
+                    actions = {
+                        if (!docs.isNullOrEmpty()) {
+                            IconButton(onClick = { searching = true }, modifier = Modifier.testTag("search")) {
+                                Icon(painterResource(R.drawable.ic_search), stringResource(R.string.search))
+                            }
+                        }
+                        IconButton(onClick = onSettings) { Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings)) }
+                    },
+                    scrollBehavior = scroll,
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
@@ -117,7 +149,9 @@ fun HomeScreen(
         },
     ) { padding ->
         val list = docs
+        val found = results
         when {
+            searching && found != null -> SearchResults(found, query, padding, viewModel.repository, onAddPages) { toDelete = it }
             list == null -> Unit
             list.isEmpty() -> EmptyState(Modifier.padding(padding))
             else -> LazyColumn(
@@ -157,6 +191,82 @@ fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchTopBar(query: String, onQuery: (String) -> Unit, onClose: () -> Unit) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    TopAppBar(
+        navigationIcon = {
+            IconButton(onClick = onClose) { Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back)) }
+        },
+        title = {
+            TextField(
+                value = query,
+                onValueChange = onQuery,
+                placeholder = { Text(stringResource(R.string.search_hint)) },
+                singleLine = true,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent,
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("search-field"),
+            )
+        },
+        actions = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQuery("") }) { Icon(painterResource(R.drawable.ic_close), stringResource(R.string.clear)) }
+            }
+        },
+    )
+}
+
+@Composable
+private fun SearchResults(
+    results: List<SearchResult>,
+    query: String,
+    padding: PaddingValues,
+    repository: DocumentRepository,
+    onAddPages: (SavedDocument) -> Unit,
+    onDelete: (SavedDocument) -> Unit,
+) {
+    val context = LocalContext.current
+    if (results.isEmpty()) {
+        Box(Modifier.fillMaxSize().padding(padding).padding(32.dp), contentAlignment = Alignment.TopCenter) {
+            Text(
+                stringResource(R.string.search_none, query.trim()),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.testTag("search-none"),
+            )
+        }
+        return
+    }
+    LazyColumn(contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 168.dp)) {
+        item {
+            Text(
+                pluralStringResource(R.plurals.search_count, results.size, results.size),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        items(results, key = { it.doc.uri.toString() }) { r ->
+            DocumentRow(
+                doc = r.doc,
+                repository = repository,
+                onOpen = { open(context, r.doc.uri) },
+                onShare = { share(context, r.doc.uri) },
+                onAddPages = { onAddPages(r.doc) },
+                onDelete = { onDelete(r.doc) },
+                match = r.match,
+            )
+        }
+    }
+}
+
 @Composable
 private fun EmptyState(modifier: Modifier) {
     Column(
@@ -193,6 +303,7 @@ private fun DocumentRow(
     onShare: () -> Unit,
     onAddPages: () -> Unit,
     onDelete: () -> Unit,
+    match: SearchMatch? = null,
 ) {
     val context = LocalContext.current
     val thumb by produceState<Pair<ImageBitmap, Int>?>(null, doc) {
@@ -216,7 +327,25 @@ private fun DocumentRow(
             }
         },
         headlineContent = { Text(doc.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text(meta, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = {
+            Column {
+                Text(meta, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (match?.page != null) {
+                    val highlight = SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        buildAnnotatedString {
+                            append(stringResource(R.string.search_page, match.page + 1))
+                            append(" · ")
+                            val start = length
+                            append(match.snippet)
+                            for (r in match.highlights) addStyle(highlight, start + r.first, start + r.last + 1)
+                        },
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag("snippet"),
+                    )
+                }
+            }
+        },
         trailingContent = {
             Box {
                 IconButton(onClick = { menu = true }) { Icon(painterResource(R.drawable.ic_more_vert), stringResource(R.string.more)) }

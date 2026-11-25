@@ -8,7 +8,9 @@ it is when flat, grayscale) and ``curved_<name>_corners.txt`` (the page corners 
 normalized, TL TR BR BL as "x y" lines) and ``curved_<name>_uv.bin``: for every 8th photo
 pixel (row-major, ⌈H/8⌉×⌈W/8⌉), the true page position (u across, v down, both in [0, 1]) as two
 little-endian uint16 holding round(65535 × value); 65535, 65535 off the page. With it the
-flattening error of any rendering can be measured exactly.
+flattening error of any rendering can be measured exactly. For two-page spreads (open books) the
+sheet is two pages wide, u spans both, and ``curved_<name>_spine.txt`` gives the spine's top and
+bottom points in the photo.
 
 The page is an unstretched sheet (A4 proportions) bent along its width by an arc-length
 parametrized profile, as a book page or a curled sheet is, lit with simple Lambertian shading
@@ -63,19 +65,20 @@ def page_image(seed: int) -> np.ndarray:
     return np.asarray(img, np.float32)
 
 
-def profile(phi_fn, n=4000):
-    """Arc-length parametrized bending curve: s in [0, 1] (page widths) -> X, Z, slope angle."""
+def profile(phi_fn, length=1.0, n=4000):
+    """Arc-length parametrized bending curve: s in [0, 1] (sheet width = [length] pages) -> X, Z, slope."""
     s = np.linspace(0, 1, n)
     phi = phi_fn(s)
-    ds = 1 / (n - 1)
+    ds = length / (n - 1)
     x = np.concatenate([[0], np.cumsum((np.cos(phi[1:]) + np.cos(phi[:-1])) / 2 * ds)])
     z = np.concatenate([[0], np.cumsum((np.sin(phi[1:]) + np.sin(phi[:-1])) / 2 * ds)])
     return s, x, z, phi
 
 
-def render(name, phi_fn, yaw, pitch, roll, dist, seed, out: Path):
+def render(name, phi_fn, yaw, pitch, roll, dist, seed, out: Path, pages=1, photo_size=(PHOTO_W, PHOTO_H)):
+    PHOTO_W, PHOTO_H = photo_size
     aspect = PAGE_H / PAGE_W
-    s_tab, x_tab, z_tab, phi_tab = profile(phi_fn)
+    s_tab, x_tab, z_tab, phi_tab = profile(phi_fn, pages)
     x_tab = x_tab - (x_tab[0] + x_tab[-1]) / 2
     z_tab = z_tab - z_tab.mean()
 
@@ -125,13 +128,15 @@ def render(name, phi_fn, yaw, pitch, roll, dist, seed, out: Path):
     err = np.linalg.norm(target - F(s, v), axis=-1)
     inside = (s >= 0) & (s <= 1) & (v >= 0) & (v <= 1) & (err < 0.5)
 
-    flat = page_image(seed)
-    page = cv2.remap(flat, (s * (PAGE_W - 1)).astype(np.float32), (v * (PAGE_H - 1)).astype(np.float32), cv2.INTER_LINEAR)
+    flat = np.hstack([page_image(seed + 50 * k) for k in range(pages)])
+    page = cv2.remap(flat, (s * (PAGE_W * pages - 1)).astype(np.float32), (v * (PAGE_H - 1)).astype(np.float32), cv2.INTER_LINEAR)
     # Lambertian shading from the surface normal (light from the camera side, slightly above).
     phi = np.interp(s, s_tab, phi_tab)
     normal = np.stack([-np.sin(phi), np.zeros_like(phi), np.cos(phi)], -1) @ R.T
     light = np.array([0.25, -0.35, -1.0]); light /= np.linalg.norm(light)
     shade = np.clip(np.abs(normal @ light), 0.25, 1) * 0.85 + 0.15
+    for k in range(1, pages):  # the gutter between pages is in shadow
+        shade *= 1 - 0.55 * np.exp(-(((s - k / pages) * pages) / 0.03) ** 2)
     rng = np.random.default_rng(seed + 100)
     bg = np.empty((PHOTO_H, PHOTO_W, 3), np.float32)
     bg[:] = rng.uniform(60, 140, 3)
@@ -141,7 +146,7 @@ def render(name, phi_fn, yaw, pitch, roll, dist, seed, out: Path):
     photo += rng.normal(0, 2.5, photo.shape)
     photo = np.clip(photo, 0, 255).astype(np.uint8)
     cv2.imwrite(str(out / f"curved_{name}.jpg"), cv2.cvtColor(photo, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 90])
-    cv2.imwrite(str(out / f"curved_{name}_flat.png"), cv2.resize(flat, (620, 877), interpolation=cv2.INTER_AREA).astype(np.uint8))
+    cv2.imwrite(str(out / f"curved_{name}_flat.png"), cv2.resize(flat, (620 * pages, 877), interpolation=cv2.INTER_AREA).astype(np.uint8))
     uv = np.stack([s, v], -1)[::8, ::8]
     code = np.round(np.clip(uv, 0, 1) * 65535).astype("<u2")
     code[~inside[::8, ::8]] = 65535
@@ -149,6 +154,11 @@ def render(name, phi_fn, yaw, pitch, roll, dist, seed, out: Path):
     with open(out / f"curved_{name}_corners.txt", "w") as fh:
         for x, y in corners:
             fh.write(f"{x / PHOTO_W:.5f} {y / PHOTO_H:.5f}\n")
+    if pages == 2:
+        spine = F(np.array([0.5, 0.5]), np.array([0.0, 1.0]))
+        with open(out / f"curved_{name}_spine.txt", "w") as fh:
+            for x, y in spine:
+                fh.write(f"{x / PHOTO_W:.5f} {y / PHOTO_H:.5f}\n")
     print(name, "page covers %.0f%% of the photo" % (100 * inside.mean()))
 
 
@@ -160,7 +170,17 @@ SCENES = [
     ("gentle", lambda s: 0.22 * np.cos(np.pi * s), -0.15, 0.3, 0.0, 1.45, 4),
 ]
 
+# Open books: two pages, each bulging up and dipping into the gutter.
+SPREADS = [
+    ("spread", lambda s: 0.45 * np.cos(np.pi * ((2 * s) % 1.0)), 0.04, 0.15, 0.03, 1.5, 7),
+]
+
 if __name__ == "__main__":
     out = Path(sys.argv[1]); out.mkdir(parents=True, exist_ok=True)
+    only = set(sys.argv[2:])
     for scene in SCENES:
-        render(*scene, out=out)
+        if not only or scene[0] in only:
+            render(*scene, out=out)
+    for scene in SPREADS:
+        if not only or scene[0] in only:
+            render(*scene, out=out, pages=2, photo_size=(2000, 1500))

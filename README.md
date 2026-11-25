@@ -23,10 +23,14 @@ Shutter ──► full-res photo (FoglioScan camera, optionally with the phone's
         ──► JPEG on disk (any number of pages: nothing is kept in memory)
         ──► OCR in the background (ML Kit Text Recognition v2, on-device);
             sideways / upside-down pages are turned upright from the text direction
-Save    ──► PDF streamed page by page, at the chosen quality:
+Book mode ──► an open book is split at the spine (darkest gutter valley in the straightened
+            spread) into two pages, each flattened
+Save    ──► PDF/A-2u streamed page by page, at the chosen quality and page size (Auto / A4 /
+            Letter / Original):
             Maximum ≈300 dpi (pass-through) · Balanced ≈200 dpi · Small ≈150 dpi · Smallest ≈100 dpi
-            black & white pages → 1-bit Flate (crisp text, a few dozen KB per page)
+            black & white pages → 1-bit CCITT Group 4 (crisp text, a few dozen KB per page)
             invisible text layer → searchable PDF, text selectable and copyable
+Search  ──► every saved document's text, indexed from the PDFs' own text layer
 ```
 
 | Layer | Tech |
@@ -39,7 +43,7 @@ Save    ──► PDF streamed page by page, at the chosen quality:
 | OCR | ML Kit Text Recognition v2, Latin model bundled (offline, no Play services needed) |
 | Imaging | Pure Kotlin, multithreaded (no OpenCV / native image libs) |
 | Storage | MediaStore → `Documents/FoglioScan` (no storage permission), DataStore for settings |
-| PDF | Custom streaming PDF 1.7 writer: JPEG pass-through (DCTDecode), 1-bit Flate images, invisible OCR text layer |
+| PDF | Custom streaming PDF/A-2u writer: JPEG pass-through (DCTDecode), 1-bit CCITT G4 images (own codec), invisible OCR text layer, XMP metadata, sRGB output intent |
 
 Min SDK 29 (Android 10), target/compile SDK 37. Languages: English, Italian.
 
@@ -50,11 +54,12 @@ app/src/main/java/app/foglioscan/
   camera/     ScannerCamera – preview, capture, live analysis + temporal smoothing
   vision/     NeuralDocumentDetector (LiteRT), DocumentDetector (classic fallback), DocumentLocator, Quad
   imaging/    PageProcessor (pipeline), PerspectiveWarp (homography + aspect recovery),
-              PageDewarper (UVDoc) + GridWarp + EdgeEvidence (curved pages), PageEnhancer
+              PageDewarper (UVDoc) + GridWarp + EdgeEvidence (curved pages), BookSplit, PageEnhancer
   ocr/        TextRecognizer (ML Kit), PageText
-  pdf/        PdfWriter, PdfExporter (compression levels), PdfTextLayer (searchable text)
+  pdf/        PdfWriter (PDF/A, page sizes), PdfExporter (compression levels), PdfTextLayer (searchable text),
+              CcittG4 (Group 4 codec), PdfPageExtractor (reopen pages, read text back)
   session/    ScanSessionViewModel – multipage document, survives process death
-  data/       DocumentRepository (MediaStore), SettingsRepository (DataStore)
+  data/       DocumentRepository (MediaStore), SettingsRepository (DataStore), SearchIndex + TextSearch
   ui/         home, camera (highlight colour, auto-capture, batch), review (+ recognized text), crop, settings
 tools/        test-photo generator, model conversion helpers
 ```
@@ -81,6 +86,7 @@ Tests:
 | `ReorderGestureTest` | Long-press-and-drag page reordering, accessibility move actions |
 | `LargeDocumentTest` | 40 full-resolution pages: no failures, flat memory, every compression level, size estimate, save |
 | `PipelineTest` | Detection accuracy, A4 aspect recovery, filters, PDF |
+| `DocumentFeaturesTest` | Book spread split at the spine (vs ground truth) into two flat, readable pages; G4 pages rendered by pdfium identical to our decoder; page sizes; saved documents found by their text |
 | `DewarpTest` | Curved pages (synthetic, exact ground truth) flattened better than the corner warp, A4 proportions; flat photos left to the corner warp |
 | `SmartDocBenchmark` | Real-photo detection benchmark |
 
@@ -117,6 +123,25 @@ cp out/lcnet100_fixed_float32.tflite app/src/main/assets/models/docaligner_lcnet
 ```
 
 The Einsum rewrite is required: the stock conversion silently produces wrong heatmaps.
+
+## Black & white pages (CCITT G4)
+
+`CcittG4` is checked against libtiff in both directions: unit tests decode fixtures libtiff
+encoded, and libtiff decodes ours (`tools/testdata/make_g4_fixtures.py --check`). On the device,
+pdfium renders a G4 page identical to our decoder (100% of pixels).
+
+## PDF/A
+
+Saved PDFs declare PDF/A-2u: XMP metadata matching the document information, an sRGB output
+intent (`app/src/main/resources/pdf/srgb.icc`, built by `tools/pdf/make_srgb_icc.py` and checked
+against littleCMS), no unembedded fonts except the invisible text layer's (exempt in text
+rendering mode 3). `PdfaSamplesTest` writes samples to `app/build/pdfa` for validation:
+
+```bash
+java -cp "verapdf/*" org.verapdf.apps.GreenfieldCliWrapper --flavour 2u app/build/pdfa/*.pdf
+```
+
+(veraPDF: `org.verapdf.apps:greenfield-apps` from Maven Central.)
 
 ## Curved pages (UVDoc)
 

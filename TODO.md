@@ -9,8 +9,7 @@ WinAnsi, so copy & paste works in every viewer); review has "Recognized text" wi
 - [ ] Evaluate PaddleOCR PP-OCRv5 mobile on LiteRT against ML Kit on dense pages.
 - [ ] Non-Latin scripts (ML Kit Chinese / Devanagari / Japanese / Korean models, downloaded on demand)
       — needs an embedded font subset + `/ToUnicode` CMap instead of WinAnsi Helvetica.
-- [ ] Store recognized text alongside the PDF (XMP metadata or a sidecar) for in-app search.
-- [ ] In-app search across saved documents.
+- [x] In-app search across saved documents (index rebuilt from the PDFs' own text layer).
 - [x] Use OCR line orientation to auto-rotate pages scanned upside down / sideways.
 
 ## 2. Best-in-class ML upgrades
@@ -20,8 +19,9 @@ can be swapped for a learned model without touching the UI.
 
 - [x] **Curved-page dewarping — UVDoc** (MIT, SIGGRAPH Asia 2023), float16 on LiteRT; used when
       the grid bends and the photo's edges confirm the curved outline (see README).
-- [ ] Test UVDoc on real photos of books / curled pages (only synthetic curved pages so far), and
-      on a phone GPU (the emulator runs it on CPU, ≈350 ms).
+- [ ] Test UVDoc on real photos of books / curled pages (only synthetic curved pages so far).
+      It runs on CPU (≈350 ms on the emulator): GPU compilation crashed inside the emulator's GL
+      driver; try the GPU on real phones behind a crash-safe check.
 - [ ] Two-page book spreads: split at the spine, then flatten each page.
 - [ ] **Learned restoration — DocRes** (MIT, CVPR 2024): deshadowing / appearance enhancement /
       deblurring in one model. Heavy (transformer); evaluate running at reduced resolution and
@@ -47,7 +47,9 @@ can be swapped for a learned model without touching the UI.
 - [x] Tap-to-focus (focus + exposure metering on the tapped point).
 - [ ] Glare detection hint ("Tilt to avoid reflections").
 - [x] Batch mode (keep shooting without visiting review between pages).
-- [ ] Book mode: split a two-page spread into two pages.
+- [x] Book mode: split a two-page spread at the spine into two flattened pages.
+- [ ] Book mode on real books; spreads photographed in portrait (sideways text) are split across
+      the wrong axis.
 
 ## 4. Documents
 
@@ -55,10 +57,13 @@ can be swapped for a learned model without touching the UI.
 - [x] Re-open a saved PDF to append pages (lossless page reuse for FoglioScan PDFs, ≈300 dpi raster for others; replace or save a copy).
 - [ ] "Open with FoglioScan" for PDFs shared from other apps (`openPdf(uri, ownDocument = false)` already handles them).
 - [ ] In-app PDF viewer (`androidx.pdf`) instead of relying on an external app.
-- [ ] Page size setting (Auto / A4 / Letter / Original).
+- [x] Page size setting (Auto / A4 / Letter / Original).
 - [x] 1-bit Flate encoding for B&W pages (compression levels).
-- [ ] CCITT G4 / JBIG2 for B&W pages (another 2–5× smaller than Flate).
-- [ ] PDF/A output for archival.
+- [x] CCITT G4 for B&W pages (own codec, verified against libtiff and pdfium); 1.4× smaller than
+      Flate on the test page.
+- [ ] JBIG2 (generic region) for B&W pages: smaller again than G4.
+- [x] PDF/A-2u output (XMP, sRGB output intent).
+- [ ] Validate saved PDFs with veraPDF in CI.
 
 ## 5. Engineering
 

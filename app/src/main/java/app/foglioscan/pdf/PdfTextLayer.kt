@@ -81,6 +81,15 @@ object PdfTextLayer {
         return sb.toString()
     }
 
+    /** The inverse of [encode]: WinAnsi bytes (one per char) back to Unicode. */
+    fun decode(s: String): String {
+        val sb = StringBuilder(s.length)
+        for (ch in s) sb.append(if (ch.code in 0x80..0x9F) CP1252_BYTES[ch.code] ?: '?' else ch)
+        return sb.toString()
+    }
+
+    private val CP1252_BYTES by lazy { CP1252_EXTRAS.entries.associate { (k, v) -> v to k } }
+
     /** Helvetica advance width (1/1000 em) of a WinAnsi byte. */
     private fun widthOf(b: Char): Short {
         val code = b.code

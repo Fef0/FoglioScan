@@ -23,6 +23,37 @@ class PdfWriterTest {
     }
 
     @Test
+    fun pageSizesFitAndCentreTheScan() {
+        // A receipt (1:3) on A4: full height, centred horizontally.
+        val a4 = PdfWriter.layout(1000, 3000, PageSize.A4)
+        assertEquals(595.28f, a4.pw, 0.01f); assertEquals(841.89f, a4.ph, 0.01f)
+        assertEquals(841.89f, a4.h, 0.01f); assertEquals(280.63f, a4.w, 0.01f)
+        assertEquals((595.28f - 280.63f) / 2, a4.x, 0.01f); assertEquals(0f, a4.y, 0.01f)
+        // Landscape scans get a landscape page.
+        val letter = PdfWriter.layout(3300, 2550, PageSize.LETTER)
+        assertEquals(792f, letter.pw, 0.01f); assertEquals(612f, letter.ph, 0.01f)
+        // Original: the scan's own shape, never snapped (an almost-A4 page stays as it is).
+        val original = PdfWriter.layout(2480, 3600, PageSize.ORIGINAL)
+        assertEquals(3600f / 2480f, original.ph / original.pw, 0.001f)
+        assertEquals(original.pw, original.w, 0.01f)
+        // Auto keeps the previous behaviour.
+        val auto = PdfWriter.layout(2480, 3600, PageSize.AUTO)
+        assertEquals(PdfWriter.pageSizePoints(2480, 3600), auto.pw to auto.ph)
+    }
+
+    @Test
+    fun theTextLayerMovesWithTheScan() {
+        val text = app.foglioscan.ocr.PageText(1000, 3000, listOf(
+            app.foglioscan.ocr.TextLine("Total", 0, floatArrayOf(0f, 0f, 500f, 0f, 500f, 60f, 0f, 60f)),
+        ))
+        val out = ByteArrayOutputStream()
+        PdfWriter.write(out, 1, "r", text = { text }, pageSize = PageSize.A4) { PdfImage.Jpeg(fakeJpeg(3), 1000, 3000) }
+        val pdf = String(out.toByteArray(), Charsets.ISO_8859_1)
+        val x = Regex("q 280\\.63 0 0 841\\.89 (157\\.3\\d) 0\\.00 cm /Im0 Do Q").find(pdf)!!.groupValues[1]
+        assertTrue("text layer translated like the image", pdf.contains("q 1 0 0 1 $x 0.00 cm\n"))
+    }
+
+    @Test
     fun xrefOffsetsPointAtTheirObjects() {
         val pdf = write(
             listOf(
@@ -37,7 +68,7 @@ class PdfWriterTest {
         val startxref = Regex("startxref\n(\\d+)\n").find(pdf)!!.groupValues[1].toInt()
         assertTrue(pdf.startsWith("xref\n", startxref))
         val count = Regex("xref\n0 (\\d+)\n").find(pdf, startxref)!!.groupValues[1].toInt()
-        assertEquals(3 + 3 * 3 + 1 + 1, count) // + shared font
+        assertEquals(3 + 3 * 3 + 3 + 1, count) // + shared font, XMP, ICC
         val entries = Regex("(\\d{10}) 00000 n \n").findAll(pdf, startxref).map { it.groupValues[1].toInt() }.toList()
         assertEquals(count - 1, entries.size)
         entries.forEachIndexed { i, offset ->
@@ -54,11 +85,13 @@ class PdfWriterTest {
                 PdfImage.Jpeg(fakeJpeg(3), 100, 141),
                 PdfImage.Jpeg(fakeJpeg(1), 100, 141),
                 PdfImage.Bilevel(byteArrayOf(9, 9), 100, 141),
+                PdfImage.Bilevel(byteArrayOf(7, 7, 7), 100, 141, PdfImage.Bilevel.Encoding.FLATE),
             ),
         )
         assertTrue(pdf.contains("/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode"))
         assertTrue(pdf.contains("/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode"))
-        assertTrue(pdf.contains("/ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /FlateDecode /Length 2"))
+        assertTrue(pdf.contains("/ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /CCITTFaxDecode /DecodeParms << /K -1 /Columns 100 /Rows 141 >> /Length 2"))
+        assertTrue(pdf.contains("/ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /FlateDecode /Length 3"))
     }
 
     @Test

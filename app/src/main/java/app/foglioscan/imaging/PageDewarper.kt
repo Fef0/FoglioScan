@@ -109,7 +109,10 @@ class PageDewarper private constructor(
             val env = runCatching { Environment.create(context.applicationContext) }
                 .onFailure { Log.w(TAG, "LiteRT environment unavailable", it) }
                 .getOrNull() ?: return null
-            for (acc in listOf(Accelerator.GPU, Accelerator.CPU)) {
+            // CPU only: UVDoc runs once per page (≈0.3–0.8 s), and compiling it for the GPU
+            // crashed natively inside the emulator's GL driver (an uncatchable crash). The live
+            // corner detector, which needs the speed, keeps the GPU.
+            for (acc in listOf(Accelerator.CPU)) {
                 val model = runCatching {
                     CompiledModel.create(context.assets, MODEL_ASSET, CompiledModel.Options(acc), env)
                 }.onFailure { Log.w(TAG, "Model init on $acc failed", it) }.getOrNull()

@@ -207,6 +207,7 @@ fun FoglioApp(startInCamera: Boolean) {
                     onRetry = session::retry,
                     onFilter = session::setFilter,
                     onRotate = session::rotate,
+                    onSplit = session::splitPage,
                     onCrop = { backStack.add(CropKey(it)) },
                     onDelete = session::delete,
                     onAddPage = { startScan() },

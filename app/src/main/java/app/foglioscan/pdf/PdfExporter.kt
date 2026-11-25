@@ -8,7 +8,6 @@ import kotlinx.serialization.Serializable
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.OutputStream
-import java.util.zip.Deflater
 import kotlin.math.max
 
 /**
@@ -51,9 +50,10 @@ object PdfExporter {
         pages: List<ExportPage>,
         compression: PdfCompression,
         title: String,
+        pageSize: PageSize = PageSize.AUTO,
         onProgress: (done: Int) -> Unit = {},
     ) {
-        PdfWriter.write(out, pages.size, title, text = { pages[it].text }) { i ->
+        PdfWriter.write(out, pages.size, title, text = { pages[it].text }, pageSize = pageSize) { i ->
             encode(pages[i], compression).also { onProgress(i + 1) }
         }
     }
@@ -81,65 +81,56 @@ object PdfExporter {
     /** Size in bytes [page] will take at [compression] (the actual encoding, not a guess). */
     fun encodedSize(page: ExportPage, compression: PdfCompression): Long = when (val img = encode(page, compression)) {
         is PdfImage.Jpeg -> img.bytes.size.toLong()
-        is PdfImage.Bilevel -> img.deflated.size.toLong()
+        is PdfImage.Bilevel -> img.data.size.toLong()
     }
 
     private fun toBilevel(bitmap: Bitmap): PdfImage.Bilevel {
         val w = bitmap.width
-        val h = bitmap.height
         val row = IntArray(w)
-        val packed = ByteArray((w + 7) / 8)
-        val deflater = Deflater(Deflater.BEST_COMPRESSION)
-        val out = ByteArrayOutputStream(64 * 1024)
-        val buf = ByteArray(64 * 1024)
-        fun drain() {
-            while (!deflater.needsInput()) {
-                val n = deflater.deflate(buf)
-                if (n == 0) break
-                out.write(buf, 0, n)
-            }
-        }
-        for (y in 0 until h) {
+        val data = CcittG4.encode(w, bitmap.height) { y, packed ->
             bitmap.getPixels(row, 0, w, 0, y, w, 1)
             packBilevelRow(row, packed)
-            deflater.setInput(packed)
-            drain()
         }
-        deflater.finish()
-        while (!deflater.finished()) {
-            val n = deflater.deflate(buf)
-            out.write(buf, 0, n)
-        }
-        deflater.end()
-        return PdfImage.Bilevel(out.toByteArray(), w, h)
+        return PdfImage.Bilevel(data, w, bitmap.height, PdfImage.Bilevel.Encoding.G4)
     }
 
-    /** Decodes a 1-bit page (as written by [toBilevel]) into a lossless PNG. */
+    /** Decodes a 1-bit page (G4, or Flate from earlier versions) into a lossless PNG. */
     fun bilevelToPng(img: PdfImage.Bilevel, target: File) {
         val w = img.width
-        val rowBytes = (w + 7) / 8
-        val inflater = java.util.zip.Inflater()
-        inflater.setInput(img.deflated)
         val bitmap = Bitmap.createBitmap(w, img.height, Bitmap.Config.ARGB_8888)
+        val row = IntArray(w)
+        fun put(y: Int, packed: ByteArray) {
+            for (x in 0 until w) {
+                val white = (packed[x shr 3].toInt() and (0x80 ushr (x and 7))) != 0
+                row[x] = if (white) -0x1 else -0x1000000
+            }
+            bitmap.setPixels(row, 0, w, 0, y, w, 1)
+        }
         try {
-            val packed = ByteArray(rowBytes)
-            val row = IntArray(w)
-            for (y in 0 until img.height) {
-                var n = 0
-                while (n < rowBytes) {
-                    val r = inflater.inflate(packed, n, rowBytes - n)
-                    if (r == 0 && (inflater.finished() || inflater.needsInput())) break
-                    n += r
+            when (img.encoding) {
+                PdfImage.Bilevel.Encoding.G4 -> CcittG4.decode(img.data, w, img.height, ::put)
+                PdfImage.Bilevel.Encoding.FLATE -> {
+                    val rowBytes = (w + 7) / 8
+                    val inflater = java.util.zip.Inflater()
+                    inflater.setInput(img.data)
+                    try {
+                        val packed = ByteArray(rowBytes)
+                        for (y in 0 until img.height) {
+                            var n = 0
+                            while (n < rowBytes) {
+                                val r = inflater.inflate(packed, n, rowBytes - n)
+                                if (r == 0 && (inflater.finished() || inflater.needsInput())) break
+                                n += r
+                            }
+                            put(y, packed)
+                        }
+                    } finally {
+                        inflater.end()
+                    }
                 }
-                for (x in 0 until w) {
-                    val white = (packed[x shr 3].toInt() and (0x80 ushr (x and 7))) != 0
-                    row[x] = if (white) -0x1 else -0x1000000
-                }
-                bitmap.setPixels(row, 0, w, 0, y, w, 1)
             }
             target.outputStream().buffered().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         } finally {
-            inflater.end()
             bitmap.recycle()
         }
     }

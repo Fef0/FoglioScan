@@ -120,4 +120,26 @@
     <string name="discard_to_open">Le pagine acquisite andranno perse e “%1$s” verrà aperto per aggiungere pagine.</string>
     <string name="flatten_curved">Raddrizza le pagine curve</string>
     <string name="flatten_curved_desc">Le pagine dei libri e i fogli arrotolati o piegati diventano piatti, con le righe dritte. Vale per le nuove scansioni.</string>
+    <string name="settings_documents">Documenti</string>
+    <string name="page_size">Formato pagina</string>
+    <string name="page_size_auto">Automatico</string>
+    <string name="page_size_a4">A4</string>
+    <string name="page_size_letter">Lettera USA</string>
+    <string name="page_size_original">Proporzioni originali</string>
+    <string name="page_size_auto_desc">A4 o Lettera quando la pagina è di quel formato, altrimenti la sua forma</string>
+    <string name="page_size_fixed_desc">Tutte le pagine di questo formato; la scansione è adattata all\'interno</string>
+    <string name="page_size_original_desc">Esattamente la forma della scansione (scontrini, biglietti)</string>
+    <string name="search">Cerca</string>
+    <string name="search_hint">Cerca nei nomi e nel testo</string>
+    <string name="search_page">Pagina %1$d</string>
+    <string name="search_none">Nessun documento contiene “%1$s”</string>
+    <string name="clear">Cancella</string>
+    <plurals name="search_count">
+        <item quantity="one">%1$d documento</item>
+        <item quantity="many">%1$d documenti</item>
+        <item quantity="other">%1$d documenti</item>
+    </plurals>
+    <string name="book_mode">Modalità libro</string>
+    <string name="book_mode_desc">Ogni foto di un libro aperto diventa due pagine, divise alla rilegatura e raddrizzate</string>
+    <string name="split_pages">Dividi in due pagine</string>
 </resources>

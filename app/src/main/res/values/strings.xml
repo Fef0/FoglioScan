@@ -125,4 +125,25 @@
     <string name="discard_to_open">The pages you scanned will be lost, and “%1$s” will open for adding pages.</string>
     <string name="flatten_curved">Flatten curved pages</string>
     <string name="flatten_curved_desc">Book pages and curled or folded sheets come out flat, with straight lines. Applies to new scans.</string>
+    <string name="settings_documents">Documents</string>
+    <string name="page_size">Page size</string>
+    <string name="page_size_auto">Automatic</string>
+    <string name="page_size_a4">A4</string>
+    <string name="page_size_letter">US Letter</string>
+    <string name="page_size_original">Original proportions</string>
+    <string name="page_size_auto_desc">A4 or Letter when the page is one of them, otherwise its own shape</string>
+    <string name="page_size_fixed_desc">Every page this size; the scan is fitted inside</string>
+    <string name="page_size_original_desc">Exactly the shape of the scan (receipts, cards)</string>
+    <string name="search">Search</string>
+    <string name="search_hint">Search names and text</string>
+    <string name="search_page">Page %1$d</string>
+    <string name="search_none">No documents contain “%1$s”</string>
+    <string name="clear">Clear</string>
+    <plurals name="search_count">
+        <item quantity="one">%1$d document</item>
+        <item quantity="other">%1$d documents</item>
+    </plurals>
+    <string name="book_mode">Book mode</string>
+    <string name="book_mode_desc">Each photo of an open book becomes two pages, split at the spine and flattened</string>
+    <string name="split_pages">Split into two pages</string>
 </resources>

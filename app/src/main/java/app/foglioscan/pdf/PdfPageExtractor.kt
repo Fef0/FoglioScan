@@ -5,7 +5,7 @@ import java.io.RandomAccessFile
 
 /**
  * Reads the page images back out of a PDF written by FoglioScan ([PdfWriter]), byte for byte:
- * JPEG pages are returned exactly as embedded and 1-bit pages as their Flate data, so reopening a
+ * JPEG pages are returned exactly as embedded and 1-bit pages as their G4 (or Flate) data, so reopening a
  * document to add pages loses no quality. Objects are located through the cross-reference table
  * and read one at a time, so memory does not depend on the document's length.
  *
@@ -14,7 +14,8 @@ import java.io.RandomAccessFile
  */
 class PdfPageExtractor private constructor(private val raf: RandomAccessFile, private val offsets: LongArray) : AutoCloseable {
 
-    /** Page image object numbers, in page order. */
+    /** Page object numbers and their image object numbers, in page order. */
+    private lateinit var pages: List<Int>
     private lateinit var images: List<Int>
 
     val pageCount: Int get() = images.size
@@ -31,9 +32,25 @@ class PdfPageExtractor private constructor(private val raf: RandomAccessFile, pr
         raf.readFully(data)
         return when {
             "/DCTDecode" in dict && bits == 8 -> PdfImage.Jpeg(data, w, h)
-            "/FlateDecode" in dict && bits == 1 -> PdfImage.Bilevel(data, w, h)
+            "/CCITTFaxDecode" in dict && bits == 1 -> PdfImage.Bilevel(data, w, h, PdfImage.Bilevel.Encoding.G4)
+            "/FlateDecode" in dict && bits == 1 -> PdfImage.Bilevel(data, w, h, PdfImage.Bilevel.Encoding.FLATE)
             else -> error("unsupported image in object $num")
         }
+    }
+
+    /**
+     * The recognized text of page [index], one line per line of the invisible text layer
+     * ([PdfTextLayer]), or "" if the page has none.
+     */
+    fun pageText(index: Int): String {
+        val page = header(pages[index]).substringBefore("endobj")
+        val contents = Regex("/Contents (\\d+) 0 R").find(page)?.groupValues?.get(1)?.toInt() ?: return ""
+        val head = header(contents)
+        val len = Regex("/Length (\\d+)").find(head.substringBefore("stream\n"))?.groupValues?.get(1)?.toInt() ?: return ""
+        val data = ByteArray(len)
+        raf.seek(offsets[contents] + head.indexOf("stream\n") + "stream\n".length)
+        raf.readFully(data)
+        return textLines(String(data, Charsets.ISO_8859_1)).joinToString("\n")
     }
 
     override fun close() = raf.close()
@@ -50,6 +67,46 @@ class PdfPageExtractor private constructor(private val raf: RandomAccessFile, pr
     }
 
     companion object {
+        /** The strings shown with `Tj` in a content stream, decoded from WinAnsi. */
+        internal fun textLines(content: String): List<String> {
+            val lines = ArrayList<String>()
+            var i = 0
+            while (i < content.length) {
+                if (content[i] != '(') { i++; continue }
+                // A literal string: balanced parentheses, backslash escapes.
+                val sb = StringBuilder()
+                var depth = 1
+                i++
+                while (i < content.length && depth > 0) {
+                    val c = content[i]
+                    when {
+                        c == '\\' && i + 1 < content.length -> {
+                            val n = content[i + 1]
+                            when (n) {
+                                'n' -> sb.append('\n'); 'r' -> sb.append('\r'); 't' -> sb.append('\t')
+                                'b' -> sb.append('\b'); 'f' -> sb.append('\u000C')
+                                in '0'..'7' -> {
+                                    var j = i + 1; var v = 0
+                                    while (j < content.length && j < i + 4 && content[j] in '0'..'7') { v = v * 8 + (content[j] - '0'); j++ }
+                                    sb.append((v and 0xFF).toChar()); i = j - 2
+                                }
+                                '\n' -> Unit
+                                else -> sb.append(n)
+                            }
+                            i += 2
+                        }
+                        c == '(' -> { depth++; sb.append(c); i++ }
+                        c == ')' -> { depth--; if (depth > 0) sb.append(c); i++ }
+                        else -> { sb.append(c); i++ }
+                    }
+                }
+                var j = i
+                while (j < content.length && content[j].isWhitespace()) j++
+                if (content.startsWith("Tj", j)) lines += PdfTextLayer.decode(sb.toString())
+            }
+            return lines
+        }
+
         /** Opens [file] if it is a FoglioScan PDF whose pages can be extracted, else null. */
         fun open(file: File): PdfPageExtractor? {
             val raf = RandomAccessFile(file, "r")
@@ -59,6 +116,7 @@ class PdfPageExtractor private constructor(private val raf: RandomAccessFile, pr
                 val pages = x.header(2).substringBefore("endobj")
                 val kids = Regex("(\\d+) 0 R").findAll(pages.substringAfter("/Kids [").substringBefore("]"))
                     .map { it.groupValues[1].toInt() }.toList()
+                x.pages = kids
                 x.images = kids.map { k ->
                     Regex("/Im0 (\\d+) 0 R").find(x.header(k).substringBefore("endobj"))?.groupValues?.get(1)?.toInt()
                         ?: error("page $k has no image")

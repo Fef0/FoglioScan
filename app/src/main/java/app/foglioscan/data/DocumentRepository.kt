@@ -85,6 +85,28 @@ class DocumentRepository private constructor(private val context: Context) {
         resolver.openInputStream(uri)!!.use { input -> target.outputStream().use { input.copyTo(it) } }
     }
 
+    /**
+     * The recognized text of each page of the PDF at [uri]: read from FoglioScan's own text layer,
+     * or with the platform's text extraction (Android 15+) for other PDFs.
+     */
+    suspend fun pageTexts(uri: Uri): List<String> = withContext(Dispatchers.IO) {
+        val copy = java.io.File.createTempFile("text", ".pdf", context.cacheDir)
+        try {
+            copyTo(uri, copy)
+            app.foglioscan.pdf.PdfPageExtractor.open(copy)?.use { x ->
+                return@withContext (0 until x.pageCount).map { x.pageText(it) }
+            }
+            if (android.os.Build.VERSION.SDK_INT < 35) return@withContext emptyList()
+            android.os.ParcelFileDescriptor.open(copy, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                android.graphics.pdf.PdfRenderer(fd).use { r ->
+                    (0 until r.pageCount).map { i -> r.openPage(i).use { p -> p.textContents.joinToString("\n") { it.text } } }
+                }
+            }
+        } finally {
+            copy.delete()
+        }
+    }
+
     suspend fun list(): List<SavedDocument> = withContext(Dispatchers.IO) {
         val projection = arrayOf(
             MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME,

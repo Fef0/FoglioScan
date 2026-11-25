@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import app.foglioscan.imaging.PageFilter
+import app.foglioscan.pdf.PageSize
 import app.foglioscan.pdf.PdfCompression
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -54,6 +55,16 @@ class SettingsRepository(context: Context) {
     /** Keep the camera open after each shot, to scan many pages in a row. */
     val batchMode: Flow<Boolean> = store.data.map { it[BATCH] ?: false }
 
+    /** Book mode: every new photo is an open book, split into its two pages. */
+    val bookMode: Flow<Boolean> = store.data.map { it[BOOK_MODE] ?: false }
+    suspend fun setBookMode(enabled: Boolean) = store.edit { it[BOOK_MODE] = enabled }
+
+    /** Physical size of saved PDF pages. */
+    val pageSize: Flow<PageSize> = store.data.map { p ->
+        p[PAGE_SIZE]?.let { runCatching { PageSize.valueOf(it) }.getOrNull() } ?: PageSize.AUTO
+    }
+    suspend fun setPageSize(size: PageSize) = store.edit { it[PAGE_SIZE] = size.name }
+
     /** Flatten curved pages (books, curled sheets) with the dewarping model. */
     val flattenCurved: Flow<Boolean> = store.data.map { it[FLATTEN] ?: true }
     suspend fun setFlattenCurved(enabled: Boolean) = store.edit { it[FLATTEN] = enabled }
@@ -78,5 +89,7 @@ class SettingsRepository(context: Context) {
         private val AUTO_CAPTURE = booleanPreferencesKey("auto_capture")
         private val BATCH = booleanPreferencesKey("batch_mode")
         private val FLATTEN = booleanPreferencesKey("flatten_curved")
+        private val PAGE_SIZE = stringPreferencesKey("page_size")
+        private val BOOK_MODE = booleanPreferencesKey("book_mode")
     }
 }

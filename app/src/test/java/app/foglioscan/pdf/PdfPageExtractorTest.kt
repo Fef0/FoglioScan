@@ -22,23 +22,45 @@ class PdfPageExtractorTest {
             PdfImage.Jpeg(jpeg(1), 2480, 3508),
             PdfImage.Bilevel(Random(2).nextBytes(321), 1700, 2200),
             PdfImage.Jpeg(jpeg(3), 3508, 2480),
+            // Flate: 1-bit pages saved by versions before 0.8.0.
+            PdfImage.Bilevel(Random(4).nextBytes(99), 1700, 2200, PdfImage.Bilevel.Encoding.FLATE),
         )
         val text = PageText(2480, 3508, listOf(TextLine("Stream data (with) endobj and /Im0 9 0 R inside", 0, floatArrayOf(0f, 0f, 900f, 0f, 900f, 40f, 0f, 40f))))
         val file = tmp.newFile("doc.pdf")
         file.outputStream().use { PdfWriter.write(it, pages.size, "Doc", text = { text }) { i -> pages[i] } }
 
         PdfPageExtractor.open(file)!!.use { x ->
-            assertEquals(3, x.pageCount)
+            assertEquals(4, x.pageCount)
             pages.forEachIndexed { i, expected ->
                 val got = x.page(i)
                 assertEquals(expected::class, got::class)
+                if (expected is PdfImage.Bilevel) assertEquals(expected.encoding, (got as PdfImage.Bilevel).encoding)
                 assertEquals(expected.width, got.width); assertEquals(expected.height, got.height)
                 val (a, b) = when (expected) {
                     is PdfImage.Jpeg -> expected.bytes to (got as PdfImage.Jpeg).bytes
-                    is PdfImage.Bilevel -> expected.deflated to (got as PdfImage.Bilevel).deflated
+                    is PdfImage.Bilevel -> expected.data to (got as PdfImage.Bilevel).data
                 }
                 assertArrayEquals("page $i", a, b)
             }
+        }
+    }
+
+    @Test
+    fun recognizedTextComesBack() {
+        val lines = listOf(
+            "Totale (IVA inclusa): 1.234,56 €",
+            "Città — «consegna» entro venerdì \\ fine",
+        )
+        val text = PageText(2480, 3508, lines.mapIndexed { i, l ->
+            TextLine(l, i, floatArrayOf(100f, 100f + i * 80, 2000f, 100f + i * 80, 2000f, 150f + i * 80, 100f, 150f + i * 80))
+        })
+        val file = tmp.newFile("text.pdf")
+        file.outputStream().use { o ->
+            PdfWriter.write(o, 2, "t", text = { if (it == 1) text else null }, pageSize = PageSize.A4) { PdfImage.Jpeg(jpeg(it), 2480, 3508) }
+        }
+        PdfPageExtractor.open(file)!!.use { x ->
+            assertEquals("", x.pageText(0))
+            assertEquals(lines.joinToString("\n"), x.pageText(1))
         }
     }
 

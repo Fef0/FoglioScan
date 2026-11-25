@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import app.foglioscan.data.DocumentRepository
 import app.foglioscan.data.SettingsRepository
 import app.foglioscan.imaging.PageFilter
+import app.foglioscan.imaging.BookSplit
 import app.foglioscan.imaging.PageDewarper
 import app.foglioscan.imaging.PageProcessor
 import app.foglioscan.ocr.PageOrientation
@@ -95,7 +96,8 @@ data class PageState(
 class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle) : AndroidViewModel(app) {
 
     private val sessionDir = File(app.cacheDir, "session").apply { mkdirs() }
-    private val processor = PageProcessor(DocumentLocator.get(app)) { PageDewarper.get(app) }
+    private val locator = DocumentLocator.get(app)
+    private val processor = PageProcessor(locator) { PageDewarper.get(app) }
     private val documents = DocumentRepository.get(app)
     private val settings = SettingsRepository(app)
 
@@ -140,8 +142,60 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
 
     fun addCapture(photo: File, liveHint: Quad?) {
         viewModelScope.launch {
-            addSpec(PageSpec(UUID.randomUUID().toString(), photo.absolutePath, settings.defaultFilter.first(), hint = liveHint))
+            addPage(PageSpec(UUID.randomUUID().toString(), photo.absolutePath, settings.defaultFilter.first(), hint = liveHint))
         }
+    }
+
+    /** Adds a new photo as a page, or as two in book mode (a spread split at its spine). */
+    private suspend fun addPage(spec: PageSpec) {
+        val halves = if (settings.bookMode.first()) splitSpec(spec) else null
+        if (halves != null) halves.forEach(::addSpec) else addSpec(spec)
+    }
+
+    /** Splits a page showing an open book into its left and right pages. */
+    fun splitPage(id: String) {
+        viewModelScope.launch {
+            val page = _pages.value.firstOrNull { it.spec.id == id } ?: return@launch
+            val halves = splitSpec(page.spec) ?: return@launch
+            jobs.remove(id)?.cancel()
+            ocrJobs.remove(id)?.cancel()
+            var replaced = false
+            _pages.update { list ->
+                val i = list.indexOfFirst { it.spec.id == id }
+                if (i < 0) list else {
+                    replaced = true
+                    list.toMutableList().apply { removeAt(i); addAll(i, halves.map { PageState(it) }) }
+                }
+            }
+            if (!replaced) { halves.drop(1).forEach { File(it.sourcePath).delete() }; return@launch }
+            persist()
+            deleteRendering(page.output, page.previewFile)
+            halves.forEach(::render)
+        }
+    }
+
+    /**
+     * The two pages of a spread: same photo (copied for the right page, so pages stay
+     * independent), each with its half of the outline. Null if the photo can't be read.
+     */
+    private suspend fun splitSpec(spec: PageSpec): List<PageSpec>? = withContext(Dispatchers.Default) {
+        runCatching {
+            val bitmap = PageProcessor.decode(File(spec.sourcePath), SPLIT_LONG_SIDE)
+            val w = bitmap.width; val h = bitmap.height
+            val outline = spec.quad?.takeIf { it != Quad.FULL } ?: locator.locatePrecise(bitmap) ?: spec.hint ?: Quad.FULL
+            val src = IntArray(w * h).also { bitmap.getPixels(it, 0, w, 0, 0, w, h) }
+            bitmap.recycle()
+            val split = BookSplit.split(src, w, h, outline)
+            Log.i(TAG, "Book split: gutter depth ${split.confidence}")
+            val ext = spec.sourcePath.substringAfterLast('.', "jpg")
+            val copy = File(sessionDir, "src-${UUID.randomUUID()}.$ext")
+            withContext(Dispatchers.IO) { File(spec.sourcePath).copyTo(copy) }
+            fun half(path: String, quad: Quad) = spec.copy(
+                id = UUID.randomUUID().toString(), sourcePath = path, quad = quad, hint = null,
+                flatten = null, oriented = false, fromPdf = false,
+            )
+            listOf(half(spec.sourcePath, split.left), half(copy.absolutePath, split.right))
+        }.onFailure { Log.w(TAG, "Book split failed", it) }.getOrNull()
     }
 
     fun importImage(uri: Uri) = importImages(listOf(uri))
@@ -160,7 +214,7 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
                         }
                     }.isSuccess
                 }
-                if (ok) addSpec(PageSpec(UUID.randomUUID().toString(), file.absolutePath, filter)) else file.delete()
+                if (ok) addPage(PageSpec(UUID.randomUUID().toString(), file.absolutePath, filter)) else file.delete()
             }
         }
     }
@@ -341,8 +395,9 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
         if (settings.ocr.first()) awaitRecognized() else awaitRendered()
         val pages = exportPages()
         check(pages.isNotEmpty() && pages.size == _pages.value.size) { "Pages not ready" }
+        val pageSize = settings.pageSize.first()
         val write = { out: java.io.OutputStream ->
-            PdfExporter.write(out, pages, compression, name) { done -> onProgress(done.toFloat() / pages.size) }
+            PdfExporter.write(out, pages, compression, name, pageSize) { done -> onProgress(done.toFloat() / pages.size) }
         }
         val target = _editing.value?.takeIf { replace }
         val uri = withContext(Dispatchers.Default) {
@@ -503,6 +558,8 @@ class ScanSessionViewModel(app: Application, private val saved: SavedStateHandle
         const val KEY_PAGES = "pages"
         const val KEY_EDITING = "editing"
         const val RASTER_DPI = 300f
+        /** Resolution the spine is looked for at (long side). */
+        const val SPLIT_LONG_SIDE = 2000
         const val PDF_OVERHEAD_PER_PAGE = 600L
     }
 }

@@ -13,7 +13,9 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,12 +42,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.foglioscan.R
 import app.foglioscan.camera.ScannerCamera
 import app.foglioscan.data.CameraSource
 import app.foglioscan.data.SettingsRepository
+import app.foglioscan.pdf.PageSize
 import app.foglioscan.ui.camera.HighlightColorSheet
 import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.launch
@@ -61,9 +65,12 @@ fun SettingsScreen(settings: SettingsRepository, onBack: () -> Unit) {
     val autoCapture by settings.autoCapture.collectAsStateWithLifecycle(true)
     val batch by settings.batchMode.collectAsStateWithLifecycle(false)
     val flatten by settings.flattenCurved.collectAsStateWithLifecycle(true)
+    val bookMode by settings.bookMode.collectAsStateWithLifecycle(false)
     val highlight by settings.highlightColor.collectAsStateWithLifecycle(SettingsRepository.DEFAULT_HIGHLIGHT)
     val hdrAvailable by produceState<Boolean?>(null) { value = ScannerCamera.isPhoneHdrAvailable(context) }
     var pickColor by rememberSaveable { mutableStateOf(false) }
+    val pageSize by settings.pageSize.collectAsStateWithLifecycle(PageSize.AUTO)
+    var pickPageSize by rememberSaveable { mutableStateOf(false) }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     Scaffold(
@@ -140,6 +147,12 @@ fun SettingsScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 title = stringResource(R.string.flatten_curved),
                 description = stringResource(R.string.flatten_curved_desc),
             ) { scope.launch { settings.setFlattenCurved(it) } }
+            SwitchItem(
+                checked = bookMode,
+                icon = R.drawable.ic_auto_stories,
+                title = stringResource(R.string.book_mode),
+                description = stringResource(R.string.book_mode_desc),
+            ) { scope.launch { settings.setBookMode(it) } }
             ListItem(
                 modifier = Modifier.selectable(selected = false, onClick = { pickColor = true }),
                 leadingContent = { Icon(painterResource(R.drawable.ic_palette), null) },
@@ -151,6 +164,15 @@ fun SettingsScreen(settings: SettingsRepository, onBack: () -> Unit) {
                             .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
                     )
                 },
+            )
+
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            SectionTitle(stringResource(R.string.settings_documents))
+            ListItem(
+                modifier = Modifier.selectable(selected = false, onClick = { pickPageSize = true }).testTag("page-size"),
+                leadingContent = { Icon(painterResource(R.drawable.ic_description), null) },
+                headlineContent = { Text(stringResource(R.string.page_size)) },
+                supportingContent = { Text(stringResource(pageSizeLabel(pageSize))) },
             )
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
@@ -168,6 +190,30 @@ fun SettingsScreen(settings: SettingsRepository, onBack: () -> Unit) {
                 supportingContent = { Text(stringResource(R.string.version_x, versionName(context))) },
             )
         }
+    }
+
+    if (pickPageSize) {
+        AlertDialog(
+            onDismissRequest = { pickPageSize = false },
+            title = { Text(stringResource(R.string.page_size)) },
+            text = {
+                Column(Modifier.selectableGroup()) {
+                    for (size in PageSize.entries) {
+                        ListItem(
+                            modifier = Modifier.selectable(selected = size == pageSize, role = Role.RadioButton) {
+                                scope.launch { settings.setPageSize(size) }
+                                pickPageSize = false
+                            },
+                            leadingContent = { RadioButton(selected = size == pageSize, onClick = null) },
+                            headlineContent = { Text(stringResource(pageSizeLabel(size))) },
+                            supportingContent = { Text(stringResource(pageSizeDescription(size))) },
+                            colors = androidx.compose.material3.ListItemDefaults.colors(containerColor = Color.Transparent),
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { pickPageSize = false }) { Text(stringResource(R.string.close)) } },
+        )
     }
 
     if (pickColor) {
@@ -220,3 +266,17 @@ private fun SourceOption(selected: Boolean, title: String, description: String, 
 
 private fun versionName(context: android.content.Context): String =
     runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "?"
+
+private fun pageSizeLabel(size: PageSize) = when (size) {
+    PageSize.AUTO -> R.string.page_size_auto
+    PageSize.A4 -> R.string.page_size_a4
+    PageSize.LETTER -> R.string.page_size_letter
+    PageSize.ORIGINAL -> R.string.page_size_original
+}
+
+private fun pageSizeDescription(size: PageSize) = when (size) {
+    PageSize.AUTO -> R.string.page_size_auto_desc
+    PageSize.A4 -> R.string.page_size_fixed_desc
+    PageSize.LETTER -> R.string.page_size_fixed_desc
+    PageSize.ORIGINAL -> R.string.page_size_original_desc
+}

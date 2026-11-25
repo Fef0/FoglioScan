@@ -35,6 +35,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Checkbox
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -132,6 +134,7 @@ fun ReviewScreen(
     editingName: String? = null,
     /** A saved document's pages are being read. */
     opening: Boolean = false,
+    onSplit: (String) -> Unit = {},
 ) {
     val pager = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
@@ -173,8 +176,26 @@ fun ReviewScreen(
                         IconButton(onClick = { onRotate(current.spec.id) }) {
                             Icon(painterResource(R.drawable.ic_rotate_right), stringResource(R.string.rotate))
                         }
-                        IconButton(onClick = { onDelete(current.spec.id) }) {
-                            Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete_page))
+                        Box {
+                            var menu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { menu = true }, modifier = Modifier.testTag("page-menu")) {
+                                Icon(painterResource(R.drawable.ic_more_vert), stringResource(R.string.more))
+                            }
+                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.split_pages)) },
+                                    leadingIcon = { Icon(painterResource(R.drawable.ic_auto_stories), null) },
+                                    onClick = { menu = false; onSplit(current.spec.id) },
+                                    enabled = !current.processing,
+                                    modifier = Modifier.testTag("split"),
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.delete_page)) },
+                                    leadingIcon = { Icon(painterResource(R.drawable.ic_delete), null) },
+                                    onClick = { menu = false; onDelete(current.spec.id) },
+                                    modifier = Modifier.testTag("delete-page"),
+                                )
+                            }
                         }
                     }
                 },
